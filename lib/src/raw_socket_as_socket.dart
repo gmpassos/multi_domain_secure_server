@@ -5,6 +5,12 @@ import 'dart:typed_data';
 
 import 'extensions.dart';
 
+/// A [RawSocket] wrapper that implements the [Socket] interface.
+///
+/// This class wraps a [RawSocket] and exposes it as a [Socket] by implementing
+/// the [Socket] interface. It allows the [RawSocket] to be used in contexts
+/// that expect a [Socket], providing stream-based access to data with [Uint8List]
+/// buffers.
 class RawSocketAsSocket extends Stream<Uint8List> implements Socket {
   final RawSocket _rawSocket;
   final StreamController<Uint8List> _streamController;
@@ -188,6 +194,12 @@ class RawSocketAsSocket extends Stream<Uint8List> implements Socket {
   }
 }
 
+/// A [RawServerSocket] wrapper that implements the [ServerSocket] interface.
+///
+/// This class wraps a [RawServerSocket] and exposes it as a [ServerSocket] by
+/// implementing the [ServerSocket] interface. It allows the [RawServerSocket]
+/// to be used in contexts that expect a [ServerSocket], providing a stream of
+/// incoming [Socket] connections.
 class RawServerSocketAsServerSocket extends Stream<Socket>
     implements ServerSocket {
   final RawServerSocket _rawServerSocket;
