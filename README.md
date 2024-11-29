@@ -27,7 +27,7 @@ import 'package:multi_domain_secure_server/multi_domain_secure_server.dart';
 ///  curl -v -k --resolve example.com:8443:127.0.0.1 https://example.com:8443/foo
 /// ```
 void main() async {
-  // Define `SecurityContext` for each hostname:
+  // Define a `SecurityContext` for each hostname:
   var hostnamesSecurityContexts = {
     'example.com': SecurityContext().configure(
       certificateChainFile: '/path/to/example.com/cert.pem',
@@ -39,7 +39,7 @@ void main() async {
     ),
   };
 
-  // Create the Secure Server at `config.port`:
+  // Create the Secure Server at port 8443:
   var server = await MultiDomainSecureServer.bind(
     InternetAddress.anyIPv4,
     8443,
@@ -97,6 +97,15 @@ because others will do the same, just be part and start with your 1 hour.*
 Graciliano M. Passos: [gmpassos@GitHub][github].
 
 [github]: https://github.com/gmpassos
+
+## Sponsor
+
+Don't be shy, show some love, and become our [GitHub Sponsor][github_sponsors].
+Your support means the world to us, and it keeps the code caffeinated! ☕✨
+
+Thanks a million! 🚀😄
+
+[github_sponsors]: https://github.com/sponsors/gmpassos
 
 ## License
 
