@@ -103,7 +103,15 @@ class MultiDomainSecureServer {
     rawSecureSocketAsync.then(_onAcceptController.add);
   }
 
-  /// Resolved the [SecurityContext] for [hostname]:
+  /// Resolves the [SecurityContext] for the given [hostname].
+  ///
+  /// This method first tries to use the `securityContextResolver`. If that returns `null`,
+  /// it falls back to the `defaultSecureContext`. If neither is available, it logs a warning
+  /// and returns `null`.
+  ///
+  /// - [hostname]: The hostname for which the security context is resolved.
+  ///
+  /// Returns a [SecurityContext] or `null` if not found.
   SecurityContext? resolveSecureContext(String? hostname) {
     var securityContextResolver = this.securityContextResolver;
     if (securityContextResolver != null) {

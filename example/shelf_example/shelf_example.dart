@@ -4,6 +4,10 @@ import 'package:multi_domain_secure_server/multi_domain_secure_server.dart';
 import 'package:shelf/shelf.dart';
 import 'package:shelf/shelf_io.dart' as shelf_io;
 
+/// You can test it (on port 8443) with:
+/// ```bash
+///  curl -v -k --resolve example.com:8443:127.0.0.1 https://example.com:8443/foo
+/// ```
 void main() async {
   // Define a `SecurityContext` for each hostname:
   // - NOTE: Replace the file paths with your own certificate and

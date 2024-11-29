@@ -10,7 +10,7 @@ This example shows how to use `MultiDomainSecureServer.bind` along with `HttpSer
 
 - [shelf_example](shelf_example)
 
-- [shelf_example @ GitHub](https://github.com/gmpassos/multi_domain_secure_server/tree/master/example/shelf_example)
+- [shelf_example.dart @ GitHub](https://github.com/gmpassos/multi_domain_secure_server/blob/master/example/shelf_example/shelf_example.dart)
 
 ## Package Source
 
