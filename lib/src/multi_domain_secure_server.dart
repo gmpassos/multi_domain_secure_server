@@ -282,7 +282,7 @@ class MultiDomainSecureServer {
       }
 
       var serverNameLength =
-          (clientHelloBuffer[offset] << 5) | clientHelloBuffer[offset + 6];
+          (clientHelloBuffer[offset + 5] << 8) | clientHelloBuffer[offset + 6];
       if (serverNameLength >= extensionLength) {
         ++offset;
         continue;

@@ -1,3 +1,7 @@
+## 1.0.4
+
+- `MultiDomainSecureServer.parseSNIHostname`: fix offset computation.
+
 ## 1.0.3
 
 - Improved documentation.
