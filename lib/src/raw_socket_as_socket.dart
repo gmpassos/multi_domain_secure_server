@@ -3,14 +3,45 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'extensions.dart';
+
 class RawSocketAsSocket extends Stream<Uint8List> implements Socket {
   final RawSocket _rawSocket;
+  final StreamController<Uint8List> _streamController;
 
   @override
   Encoding encoding;
 
-  RawSocketAsSocket(this._rawSocket, {Encoding? encoding})
-      : encoding = encoding ?? utf8;
+  RawSocketAsSocket(this._rawSocket,
+      {StreamController<Uint8List>? streamController, Encoding? encoding})
+      : encoding = encoding ?? utf8,
+        _streamController =
+            _resolveStreamController(_rawSocket, streamController);
+
+  static StreamController<Uint8List> _resolveStreamController(
+      RawSocket rawSocket, StreamController<Uint8List>? streamController) {
+    if (streamController != null) return streamController;
+
+    streamController = StreamController();
+
+    rawSocket.listen(
+      (event) {
+        if (event == RawSocketEvent.read) {
+          var bs = rawSocket.read();
+          if (bs != null) {
+            streamController!.add(bs);
+          }
+        }
+      },
+      onError: (e, s) => streamController!.addError(e, s),
+      onDone: () {
+        streamController!.close();
+      },
+      cancelOnError: true,
+    );
+
+    return streamController;
+  }
 
   @override
   int get port => _rawSocket.remotePort;
@@ -36,10 +67,15 @@ class RawSocketAsSocket extends Stream<Uint8List> implements Socket {
   void setRawOption(RawSocketOption option) => _rawSocket.setRawOption(option);
 
   @override
-  void add(List<int> data) => _rawSocket.write(data);
+  void add(List<int> data) {
+    _checkNotAddingStream();
+    _rawSocket.write(data);
+  }
 
   @override
   void write(Object? data) {
+    _checkNotAddingStream();
+
     var bs = encoding.encode(data.toString());
     _rawSocket.write(bs);
   }
@@ -48,21 +84,96 @@ class RawSocketAsSocket extends Stream<Uint8List> implements Socket {
   void writeCharCode(int charCode) => write(String.fromCharCode(charCode));
 
   @override
+  void writeln([Object? object = ""]) {
+    _checkNotAddingStream();
+
+    if (object != '') {
+      var bs = encoding.encode(object.toString());
+      _rawSocket.write(bs);
+    }
+
+    _rawSocket.write(const [10]); // New line: \n
+  }
+
+  @override
   void writeAll(Iterable objects, [String separator = ""]) {
+    _checkNotAddingStream();
+
     if (separator.isNotEmpty) {
-      var i = 0;
-      for (var o in objects) {
-        if (i > 0) {
-          write(separator);
+      final itr = objects.iterator;
+
+      if (itr.moveNext()) {
+        var o = itr.current;
+        {
+          var bs = encoding.encode(o.toString());
+          _rawSocket.write(bs);
         }
-        write(o);
-        i++;
+
+        var separatorBs = encoding.encode(separator);
+
+        while (itr.moveNext()) {
+          var o = itr.current;
+          _rawSocket.write(separatorBs);
+          var bs = encoding.encode(o.toString());
+          _rawSocket.write(bs);
+        }
       }
     } else {
       for (var o in objects) {
-        write(o);
+        var bs = encoding.encode(o.toString());
+        _rawSocket.write(bs);
       }
     }
+  }
+
+  bool _addingStream = false;
+
+  void _checkNotAddingStream() {
+    if (_addingStream) {
+      throw StateError("Currently adding to `Stream`");
+    }
+  }
+
+  @override
+  Future addStream(Stream<List<int>> stream) async {
+    _addingStream = true;
+
+    try {
+      final completer = Completer<void>();
+
+      final subscription = stream.listen(
+        (data) => _rawSocket.write(data),
+        onError: (e, s) => completer.completeError(e, s),
+        onDone: () => completer.complete(),
+        cancelOnError: true, // Cancel the subscription on error
+      );
+
+      await completer.future;
+
+      await subscription.cancel();
+    } finally {
+      _addingStream = false;
+    }
+  }
+
+  @override
+  void addError(Object error, [StackTrace? stackTrace]) {
+    _checkNotAddingStream();
+    _streamController.addError(error, stackTrace);
+  }
+
+  @override
+  Future get done => _streamController.done;
+
+  @override
+  StreamSubscription<Uint8List> listen(void Function(Uint8List event)? onData,
+          {Function? onError, void Function()? onDone, bool? cancelOnError}) =>
+      _streamController.stream.listen(onData,
+          onError: onError, onDone: onDone, cancelOnError: cancelOnError);
+
+  @override
+  Future flush() {
+    return Future.value();
   }
 
   @override
@@ -73,39 +184,48 @@ class RawSocketAsSocket extends Stream<Uint8List> implements Socket {
   @override
   void destroy() {
     _rawSocket.close();
+    _streamController.close();
+  }
+}
+
+class RawServerSocketAsServerSocket extends Stream<Socket>
+    implements ServerSocket {
+  final RawServerSocket _rawServerSocket;
+  final StreamController<Socket> _streamController;
+
+  RawServerSocketAsServerSocket(this._rawServerSocket,
+      {StreamController<Socket>? streamController})
+      : _streamController = _resolveStream(_rawServerSocket, streamController);
+
+  static StreamController<Socket> _resolveStream(
+      RawServerSocket rawServerSocket,
+      StreamController<Socket>? streamController) {
+    if (streamController != null) return streamController;
+
+    streamController = StreamController<Socket>();
+
+    rawServerSocket.listen((rawSocket) {
+      streamController!.add(rawSocket.asSocket());
+    });
+
+    return streamController;
   }
 
   @override
-  void writeln([Object? object = ""]) {
-    write(object);
-    write("\n");
-  }
+  InternetAddress get address => _rawServerSocket.address;
 
   @override
-  void addError(Object error, [StackTrace? stackTrace]) {
-    // TODO: implement addError
-  }
+  int get port => _rawServerSocket.port;
 
   @override
-  Future addStream(Stream<List<int>> stream) {
-    // TODO: implement addStream
-    throw UnimplementedError();
-  }
+  StreamSubscription<Socket> listen(void Function(Socket event)? onData,
+          {Function? onError, void Function()? onDone, bool? cancelOnError}) =>
+      _streamController.stream.listen(onData,
+          onError: onError, onDone: onDone, cancelOnError: cancelOnError);
 
   @override
-  // TODO: implement done
-  Future get done => throw UnimplementedError();
-
-  @override
-  Future flush() {
-    // TODO: implement flush
-    throw UnimplementedError();
-  }
-
-  @override
-  StreamSubscription<Uint8List> listen(void Function(Uint8List event)? onData,
-      {Function? onError, void Function()? onDone, bool? cancelOnError}) {
-    // TODO: implement listen
-    throw UnimplementedError();
+  Future<ServerSocket> close() async {
+    await _rawServerSocket.close();
+    return this;
   }
 }

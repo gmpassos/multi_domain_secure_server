@@ -6,6 +6,9 @@ import 'dart:typed_data';
 
 import 'package:logging/logging.dart' as logging;
 
+import 'extensions.dart';
+import 'raw_socket_as_socket.dart';
+
 final _log = logging.Logger('MultiDomainSecureServer');
 
 typedef SecurityContextResolver = SecurityContext? Function(String? hostname);
@@ -94,6 +97,16 @@ class MultiDomainSecureServer {
           "No `defaultSecureContext` or `securityContextResolver` is defined! Hostname: $hostname");
       return null;
     }
+  }
+
+  RawServerSocketAsServerSocket asServerSocket() {
+    var streamController = StreamController<Socket>();
+
+    onAccept.listen((rawSecureSocket) {
+      streamController.add(rawSecureSocket.asSocket());
+    });
+
+    return _rawServerSocket.asServerSocket(streamController: streamController);
   }
 
   static Future<({Uint8List clientHello, String? hostname})> extractSNIHostname(

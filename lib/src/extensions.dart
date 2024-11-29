@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -44,4 +45,10 @@ extension SecurityContextExtension on SecurityContext {
 extension RawSocketExtension on RawSocket {
   RawSocketAsSocket asSocket({Encoding? encoding}) =>
       RawSocketAsSocket(this, encoding: encoding);
+}
+
+extension RawServerSocketExtension on RawServerSocket {
+  RawServerSocketAsServerSocket asServerSocket(
+          {StreamController<Socket>? streamController}) =>
+      RawServerSocketAsServerSocket(this, streamController: streamController);
 }
