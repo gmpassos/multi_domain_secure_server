@@ -8,6 +8,9 @@
 - `MultiDomainSecureServer`:
   - Added `asServerSocket`.
 
+- New `example/shelf_example`
+- New `example/example.md`
+
 ## 1.0.0
 
 - Initial version.

@@ -14,7 +14,9 @@ void main(List<String> args) async {
 
   var config = _parseArgs(args);
 
-  // Define `SecurityContext` for each hostname:
+  // Define a `SecurityContext` for each hostname:
+  // - NOTE: Replace the file paths with your own certificate and
+  //   private key files for the respective domains to run this example.
   var hostnamesSecurityContexts = {
     'example.com': SecurityContext().configure(
       certificateChainFile: '/path/to/example.com/cert.pem',
@@ -46,6 +48,7 @@ void main(List<String> args) async {
   server.onAccept.listen((acceptedSocket) {
     print(
         '-- Accepted Socket: ${acceptedSocket.remoteAddress.address}:${acceptedSocket.remotePort}');
+    // Handle the `acceptedSocket`...
   });
 }
 
