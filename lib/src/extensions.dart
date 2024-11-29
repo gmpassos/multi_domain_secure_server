@@ -1,10 +1,13 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'raw_socket_as_socket.dart';
 
 extension SecurityContextExtension on SecurityContext {
+  /// A helper method to configure a [SecurityContext].
+  /// Returns this [SecurityContext] instance.
   SecurityContext configure({
     String? certificateChainFile,
     List<int>? certificateChainBytes,
@@ -43,11 +46,22 @@ extension SecurityContextExtension on SecurityContext {
 }
 
 extension RawSocketExtension on RawSocket {
-  RawSocketAsSocket asSocket({Encoding? encoding}) =>
-      RawSocketAsSocket(this, encoding: encoding);
+  /// Converts a [RawSocket] into a [RawSocketAsSocket], which implements [Socket].
+  ///
+  /// This method wraps the [RawSocket] to provide a higher-level interface for socket
+  /// operations, allowing it to be used where a [Socket] is expected.
+  RawSocketAsSocket asSocket(
+          {StreamController<Uint8List>? streamController,
+          Encoding? encoding}) =>
+      RawSocketAsSocket(this,
+          streamController: streamController, encoding: encoding);
 }
 
 extension RawServerSocketExtension on RawServerSocket {
+  /// Converts a [RawServerSocket] into a [RawServerSocketAsServerSocket], which implements [ServerSocket].
+  ///
+  /// This method wraps the [RawServerSocket] to provide a higher-level interface for server socket
+  /// operations, allowing it to be used where a [ServerSocket] is expected.
   RawServerSocketAsServerSocket asServerSocket(
           {StreamController<Socket>? streamController}) =>
       RawServerSocketAsServerSocket(this, streamController: streamController);

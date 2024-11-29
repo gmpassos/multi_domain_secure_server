@@ -1,6 +1,6 @@
 name: multi_domain_secure_server
 description: A SecureServerSocket that supports multiple domains with dynamic SecurityContext resolution.
-version: 1.0.1
+version: 1.0.2
 repository: https://github.com/gmpassos/multi_domain_secure_server
 
 environment:

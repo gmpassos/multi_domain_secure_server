@@ -11,13 +11,23 @@ import 'raw_socket_as_socket.dart';
 
 final _log = logging.Logger('MultiDomainSecureServer');
 
+/// A function that resolves a [SecurityContext] for a given [hostname].
+/// See [MultiDomainSecureServer.securityContextResolver]
 typedef SecurityContextResolver = SecurityContext? Function(String? hostname);
 
+/// A secure server that wraps a [RawServerSocket] and supports multiple
+/// [SecurityContext] configurations via [securityContextResolver].
+///
+/// This class uses a [RawServerSocket] for low-level communication and allows dynamic
+/// selection of [SecurityContext] based on the incoming connection and hostname.
+/// The [securityContextResolver] determines the appropriate security context for each
+/// connection.
 class MultiDomainSecureServer {
   final RawServerSocket _rawServerSocket;
   final List<String>? _supportedProtocols;
   final SecurityContext? _defaultSecureContext;
 
+  /// Resolves the [SecurityContext] for each connection and hostname.
   final SecurityContextResolver? securityContextResolver;
 
   MultiDomainSecureServer._(this._rawServerSocket, this._supportedProtocols,
@@ -25,6 +35,7 @@ class MultiDomainSecureServer {
     _rawServerSocket.listen(_accept);
   }
 
+  /// The wrapped [RawServerSocket].
   RawServerSocket get rawServerSocket => _rawServerSocket;
 
   List<String>? get supportedProtocols {
@@ -34,8 +45,24 @@ class MultiDomainSecureServer {
         : null;
   }
 
+  /// The default [SecurityContext] to use if [securityContextResolver] returns `null`.
   SecurityContext? get defaultSecureContext => _defaultSecureContext;
 
+  /// Binds a [MultiDomainSecureServer] to the specified [address] and [port].
+  ///
+  /// This method sets up a secure server that listens on the given [address] and [port].
+  /// You can optionally provide a list of supported protocols, a default security context,
+  /// and a custom [securityContextResolver] to select the security context for each connection.
+  ///
+  /// - [address]: The address to bind the server to (IP or hostname).
+  /// - [port]: The port to bind the server to.
+  /// - [supportedProtocols]: Optional list of supported security protocols.
+  /// - [defaultSecureContext]: Optional default security context for connections.
+  /// - [securityContextResolver]: Optional custom resolver for selecting security contexts.
+  ///
+  /// Returns a [Future] that completes with a [MultiDomainSecureServer] once the server is bound.
+  ///
+  /// See [RawServerSocket.bind].
   static Future<MultiDomainSecureServer> bind(address, int port,
       {List<String>? supportedProtocols,
       SecurityContext? defaultSecureContext,
@@ -48,6 +75,9 @@ class MultiDomainSecureServer {
   final StreamController<RawSecureSocket> _onAcceptController =
       StreamController();
 
+  /// Stream of incoming [RawSecureSocket] connections.
+  ///
+  /// Emits a [RawSecureSocket] each time a new connection is successfully accepted.
   Stream<RawSecureSocket> get onAccept => _onAcceptController.stream;
 
   Future<void> _accept(RawSocket rawSocket) async {
@@ -73,6 +103,7 @@ class MultiDomainSecureServer {
     rawSecureSocketAsync.then(_onAcceptController.add);
   }
 
+  /// Resolved the [SecurityContext] for [hostname]:
   SecurityContext? resolveSecureContext(String? hostname) {
     var securityContextResolver = this.securityContextResolver;
     if (securityContextResolver != null) {
@@ -99,6 +130,7 @@ class MultiDomainSecureServer {
     }
   }
 
+  /// Converts this to a [RawServerSocketAsServerSocket], which implements [ServerSocket].
   RawServerSocketAsServerSocket asServerSocket() {
     var streamController = StreamController<Socket>();
 
@@ -109,6 +141,16 @@ class MultiDomainSecureServer {
     return _rawServerSocket.asServerSocket(streamController: streamController);
   }
 
+  /// Extracts the SNI hostname from a TLS `ClientHello` message.
+  ///
+  /// Reads data from the provided [RawSocket] in chunks, extracting the SNI hostname
+  /// if present. The method retries reading with delays if no data is available.
+  ///
+  /// - [rawSocket]: The [RawSocket] to read the `ClientHello` message from.
+  ///
+  /// Returns a [Future] with a tuple:
+  /// - [clientHello]: The raw `ClientHello` data (as [Uint8List]) that was read from the socket.
+  /// - [hostname]: The extracted SNI hostname, or null if not found.
   static Future<({Uint8List clientHello, String? hostname})> extractSNIHostname(
       RawSocket rawSocket) async {
     var clientHello = Uint8List(0);
