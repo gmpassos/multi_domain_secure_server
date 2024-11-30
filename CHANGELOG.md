@@ -1,3 +1,8 @@
+## 1.0.6
+
+- `MultiDomainSecureServer`:
+  - `extractSNIHostname`: log any parsing exception/error.
+
 ## 1.0.5
 
 - `MultiDomainSecureServer.bind`:

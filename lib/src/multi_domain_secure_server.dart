@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:collection';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
 import 'dart:typed_data';
@@ -179,9 +180,17 @@ class MultiDomainSecureServer {
             ? Uint8List.fromList(clientHello + buffer)
             : buffer;
 
-        var hostname = parseSNIHostname(clientHello);
-        if (hostname != null) {
-          return (hostname: hostname, clientHello: clientHello);
+        try {
+          var hostname = parseSNIHostname(clientHello);
+          if (hostname != null) {
+            return (hostname: hostname, clientHello: clientHello);
+          }
+        } catch (e, s) {
+          _log.severe(
+              "Error calling `parseSNIHostname`> clientHello: ${base64.encode(clientHello)}",
+              e,
+              s);
+          rethrow;
         }
       } else {
         int delayMs;
