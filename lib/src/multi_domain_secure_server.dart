@@ -59,6 +59,9 @@ class MultiDomainSecureServer {
   /// - [supportedProtocols]: Optional list of supported security protocols.
   /// - [defaultSecureContext]: Optional default security context for connections.
   /// - [securityContextResolver]: Optional custom resolver for selecting security contexts.
+  /// - [backlog]: The maximum number of pending connections in the queue. Defaults to 0, meaning the system default.
+  /// - [v6Only]: If true, restricts the server to IPv6 connections only. Defaults to false.
+  /// - [shared]: If true, allows multiple isolates to bind to the same address and port. Defaults to false.
   ///
   /// Returns a [Future] that completes with a [MultiDomainSecureServer] once the server is bound.
   ///
@@ -66,8 +69,12 @@ class MultiDomainSecureServer {
   static Future<MultiDomainSecureServer> bind(address, int port,
       {List<String>? supportedProtocols,
       SecurityContext? defaultSecureContext,
-      SecurityContextResolver? securityContextResolver}) async {
-    final rawServerSocket = await RawServerSocket.bind(address, port);
+      SecurityContextResolver? securityContextResolver,
+      int backlog = 0,
+      bool v6Only = false,
+      bool shared = false}) async {
+    final rawServerSocket = await RawServerSocket.bind(address, port,
+        backlog: backlog, v6Only: v6Only, shared: shared);
     return MultiDomainSecureServer._(rawServerSocket, supportedProtocols,
         defaultSecureContext, securityContextResolver);
   }

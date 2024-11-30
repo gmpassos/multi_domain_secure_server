@@ -1,3 +1,8 @@
+## 1.0.5
+
+- `MultiDomainSecureServer.bind`:
+  - Added parameters `backlog`, `v6Only` and `shared`.
+
 ## 1.0.4
 
 - `MultiDomainSecureServer.parseSNIHostname`: fix offset computation.
