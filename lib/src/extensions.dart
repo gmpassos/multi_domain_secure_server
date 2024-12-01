@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'raw_socket_as_socket.dart';
 
@@ -50,11 +49,8 @@ extension RawSocketExtension on RawSocket {
   ///
   /// This method wraps the [RawSocket] to provide a higher-level interface for socket
   /// operations, allowing it to be used where a [Socket] is expected.
-  RawSocketAsSocket asSocket(
-          {StreamController<Uint8List>? streamController,
-          Encoding? encoding}) =>
-      RawSocketAsSocket(this,
-          streamController: streamController, encoding: encoding);
+  RawSocketAsSocket asSocket({Encoding? encoding}) =>
+      RawSocketAsSocket(this, encoding: encoding);
 }
 
 extension RawSecureSocketExtension on RawSecureSocket {
@@ -62,11 +58,8 @@ extension RawSecureSocketExtension on RawSecureSocket {
   ///
   /// This method wraps the [RawSecureSocket] to provide a higher-level interface for secure socket
   /// operations, allowing it to be used where a [SecureSocket] is expected.
-  RawSecureSocketAsSecureSocket asSecureSocket(
-          {StreamController<Uint8List>? streamController,
-          Encoding? encoding}) =>
-      RawSecureSocketAsSecureSocket(this,
-          streamController: streamController, encoding: encoding);
+  RawSecureSocketAsSecureSocket asSecureSocket({Encoding? encoding}) =>
+      RawSecureSocketAsSecureSocket(this, encoding: encoding);
 }
 
 extension RawServerSocketExtension on RawServerSocket {
