@@ -57,6 +57,18 @@ extension RawSocketExtension on RawSocket {
           streamController: streamController, encoding: encoding);
 }
 
+extension RawSecureSocketExtension on RawSecureSocket {
+  /// Converts a [RawSecureSocket] into a [RawSecureSocketAsSecureSocket], which implements [SecureSocket].
+  ///
+  /// This method wraps the [RawSecureSocket] to provide a higher-level interface for secure socket
+  /// operations, allowing it to be used where a [SecureSocket] is expected.
+  RawSecureSocketAsSecureSocket asSecureSocket(
+          {StreamController<Uint8List>? streamController,
+          Encoding? encoding}) =>
+      RawSecureSocketAsSecureSocket(this,
+          streamController: streamController, encoding: encoding);
+}
+
 extension RawServerSocketExtension on RawServerSocket {
   /// Converts a [RawServerSocket] into a [RawServerSocketAsServerSocket], which implements [ServerSocket].
   ///
@@ -65,4 +77,24 @@ extension RawServerSocketExtension on RawServerSocket {
   RawServerSocketAsServerSocket asServerSocket(
           {StreamController<Socket>? streamController}) =>
       RawServerSocketAsServerSocket(this, streamController: streamController);
+
+  /// Converts a [RawServerSocket] into a [RawServerSocketAsSecureServerSocket], which implements [SecureServerSocket].
+  ///
+  /// This method wraps the [RawServerSocket] to provide a higher-level interface for server socket
+  /// operations, allowing it to be used where a [SecureServerSocket] is expected.
+  RawServerSocketAsSecureServerSocket asSecureServerSocket(
+          {required StreamController<SecureSocket> streamController}) =>
+      RawServerSocketAsSecureServerSocket(this,
+          streamController: streamController);
+}
+
+extension RawSecureServerSocketExtension on RawSecureServerSocket {
+  /// Converts a [RawSecureServerSocket] into a [RawSecureServerSocketAsSecureServerSocket], which implements [SecureServerSocket].
+  ///
+  /// This method wraps the [RawSecureServerSocket] to provide a higher-level interface for server socket
+  /// operations, allowing it to be used where a [SecureServerSocket] is expected.
+  RawSecureServerSocketAsSecureServerSocket asSecureServerSocket(
+          {StreamController<SecureSocket>? streamController}) =>
+      RawSecureServerSocketAsSecureServerSocket(this,
+          streamController: streamController);
 }

@@ -194,9 +194,35 @@ class RawSocketAsSocket extends Stream<Uint8List> implements Socket {
   }
 }
 
+/// A [RawSecureSocket] wrapper that implements the [SecureSocket] interface.
+/// Extends [RawSocketAsSocket].
+class RawSecureSocketAsSecureSocket extends RawSocketAsSocket
+    implements SecureSocket {
+  RawSecureSocket get _rawSecureSocket => _rawSocket as RawSecureSocket;
+
+  //ignore: use_super_parameters
+  RawSecureSocketAsSecureSocket(RawSecureSocket rawSecureSocket,
+      {super.streamController, super.encoding})
+      : super(rawSecureSocket);
+
+  @override
+  X509Certificate? get peerCertificate => _rawSecureSocket.peerCertificate;
+
+  @override
+  @Deprecated("Not implemented")
+  void renegotiate(
+          {bool useSessionCache = true,
+          bool requestClientCertificate = false,
+          bool requireClientCertificate = false}) =>
+      _rawSecureSocket.renegotiate();
+
+  @override
+  String? get selectedProtocol => _rawSecureSocket.selectedProtocol;
+}
+
 /// A [RawServerSocket] wrapper that implements the [ServerSocket] interface.
 ///
-/// This class wraps a [RawServerSocket] and exposes it as a [ServerSocket] by
+/// This class wraps a [RawServerSocket] and exposes it as a [RawServerSocketAsServerSocket] by
 /// implementing the [ServerSocket] interface. It allows the [RawServerSocket]
 /// to be used in contexts that expect a [ServerSocket], providing a stream of
 /// incoming [Socket] connections.
@@ -238,6 +264,95 @@ class RawServerSocketAsServerSocket extends Stream<Socket>
   @override
   Future<ServerSocket> close() async {
     await _rawServerSocket.close();
+    return this;
+  }
+}
+
+/// A [RawServerSocket] wrapper that implements the [SecureServerSocket] interface.
+///
+/// This class wraps a [RawServerSocket] and exposes it as a [RawServerSocketAsSecureServerSocket] by
+/// implementing the [SecureServerSocket] interface. It allows the [RawServerSocket]
+/// to be used in contexts that expect a [SecureServerSocket], providing a stream of
+/// incoming [SecureSocket] connections.
+class RawServerSocketAsSecureServerSocket extends Stream<SecureSocket>
+    implements SecureServerSocket {
+  final RawServerSocket _rawServerSocket;
+  final StreamController<SecureSocket> _streamController;
+
+  RawServerSocketAsSecureServerSocket(this._rawServerSocket,
+      {required StreamController<SecureSocket> streamController})
+      : _streamController = streamController;
+
+  @override
+  InternetAddress get address => _rawServerSocket.address;
+
+  @override
+  int get port => _rawServerSocket.port;
+
+  @override
+  StreamSubscription<SecureSocket> listen(
+          void Function(SecureSocket event)? onData,
+          {Function? onError,
+          void Function()? onDone,
+          bool? cancelOnError}) =>
+      _streamController.stream.listen(onData,
+          onError: onError, onDone: onDone, cancelOnError: cancelOnError);
+
+  @override
+  Future<SecureServerSocket> close() async {
+    await _rawServerSocket.close();
+    return this;
+  }
+}
+
+/// A [RawSecureServerSocket] wrapper that implements the [SecureServerSocket] interface.
+///
+/// This class wraps a [RawSecureServerSocket] and exposes it as a [RawSecureServerSocketAsSecureServerSocket] by
+/// implementing the [SecureServerSocket] interface. It allows the [RawSecureServerSocket]
+/// to be used in contexts that expect a [SecureServerSocket], providing a stream of
+/// incoming [SecureSocket] connections.
+class RawSecureServerSocketAsSecureServerSocket extends Stream<SecureSocket>
+    implements SecureServerSocket {
+  final RawSecureServerSocket _rawSecureServerSocket;
+  final StreamController<SecureSocket> _streamController;
+
+  RawSecureServerSocketAsSecureServerSocket(this._rawSecureServerSocket,
+      {StreamController<SecureSocket>? streamController})
+      : _streamController =
+            _resolveStream(_rawSecureServerSocket, streamController);
+
+  static StreamController<SecureSocket> _resolveStream(
+      RawSecureServerSocket rawSecureServerSocket,
+      StreamController<SecureSocket>? streamController) {
+    if (streamController != null) return streamController;
+
+    streamController = StreamController<SecureSocket>();
+
+    rawSecureServerSocket.listen((rawSecureSocket) {
+      streamController!.add(rawSecureSocket.asSecureSocket());
+    });
+
+    return streamController;
+  }
+
+  @override
+  InternetAddress get address => _rawSecureServerSocket.address;
+
+  @override
+  int get port => _rawSecureServerSocket.port;
+
+  @override
+  StreamSubscription<SecureSocket> listen(
+          void Function(SecureSocket event)? onData,
+          {Function? onError,
+          void Function()? onDone,
+          bool? cancelOnError}) =>
+      _streamController.stream.listen(onData,
+          onError: onError, onDone: onDone, cancelOnError: cancelOnError);
+
+  @override
+  Future<SecureServerSocket> close() async {
+    await _rawSecureServerSocket.close();
     return this;
   }
 }

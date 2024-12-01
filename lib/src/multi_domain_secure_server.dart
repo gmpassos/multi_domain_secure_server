@@ -147,14 +147,28 @@ class MultiDomainSecureServer {
   }
 
   /// Converts this to a [RawServerSocketAsServerSocket], which implements [ServerSocket].
-  RawServerSocketAsServerSocket asServerSocket() {
+  RawServerSocketAsServerSocket asServerSocket({bool useSecureSocket = false}) {
     var streamController = StreamController<Socket>();
 
     onAccept.listen((rawSecureSocket) {
-      streamController.add(rawSecureSocket.asSocket());
+      streamController.add(useSecureSocket
+          ? rawSecureSocket.asSecureSocket()
+          : rawSecureSocket.asSocket());
     });
 
     return _rawServerSocket.asServerSocket(streamController: streamController);
+  }
+
+  /// Converts this to a [RawServerSocketAsSecureServerSocket], which implements [SecureServerSocket].
+  RawServerSocketAsSecureServerSocket asSecureServerSocket() {
+    var streamController = StreamController<SecureSocket>();
+
+    onAccept.listen((rawSecureSocket) {
+      streamController.add(rawSecureSocket.asSecureSocket());
+    });
+
+    return _rawServerSocket.asSecureServerSocket(
+        streamController: streamController);
   }
 
   /// Extracts the SNI hostname from a TLS `ClientHello` message.

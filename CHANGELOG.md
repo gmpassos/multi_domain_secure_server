@@ -5,6 +5,19 @@
   - `parseSNIHostname`: improve parsing.
   - Added `isValidHostname`.
 
+- New `RawSecureSocketAsSecureSocket`.
+- New `RawServerSocketAsSecureServerSocket`.
+- New `RawSecureServerSocketAsSecureServerSocket`.
+
+- `RawServerSocketExtension`:
+  - Added `asSecureServerSocket`.
+
+- New `RawSecureSocketExtension`:
+  - `asSecureSocket`
+
+- New `RawSecureServerSocketExtension`:
+  - `asSecureServerSocket`.
+
 ## 1.0.5
 
 - `MultiDomainSecureServer.bind`:
