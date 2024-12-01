@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:collection';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:logging/logging.dart' as logging;
@@ -31,8 +30,15 @@ class MultiDomainSecureServer {
   /// Resolves the [SecurityContext] for each connection and hostname.
   final SecurityContextResolver? securityContextResolver;
 
-  MultiDomainSecureServer._(this._rawServerSocket, this._supportedProtocols,
-      this._defaultSecureContext, this.securityContextResolver) {
+  /// If true, only handshakes with a ClientHello message containing a hostname are accepted.
+  final bool requiresHandshakesWithHostname;
+
+  MultiDomainSecureServer._(
+      this._rawServerSocket,
+      this._supportedProtocols,
+      this._defaultSecureContext,
+      this.securityContextResolver,
+      this.requiresHandshakesWithHostname) {
     _rawServerSocket.listen(_accept);
   }
 
@@ -60,6 +66,7 @@ class MultiDomainSecureServer {
   /// - [supportedProtocols]: Optional list of supported security protocols.
   /// - [defaultSecureContext]: Optional default security context for connections.
   /// - [securityContextResolver]: Optional custom resolver for selecting security contexts.
+  /// - [requiresHandshakesWithHostname]: If true, only handshakes with a hostname in the ClientHello are accepted.
   /// - [backlog]: The maximum number of pending connections in the queue. Defaults to 0, meaning the system default.
   /// - [v6Only]: If true, restricts the server to IPv6 connections only. Defaults to false.
   /// - [shared]: If true, allows multiple isolates to bind to the same address and port. Defaults to false.
@@ -71,13 +78,18 @@ class MultiDomainSecureServer {
       {List<String>? supportedProtocols,
       SecurityContext? defaultSecureContext,
       SecurityContextResolver? securityContextResolver,
+      bool requiresHandshakesWithHostname = false,
       int backlog = 0,
       bool v6Only = false,
       bool shared = false}) async {
     final rawServerSocket = await RawServerSocket.bind(address, port,
         backlog: backlog, v6Only: v6Only, shared: shared);
-    return MultiDomainSecureServer._(rawServerSocket, supportedProtocols,
-        defaultSecureContext, securityContextResolver);
+    return MultiDomainSecureServer._(
+        rawServerSocket,
+        supportedProtocols,
+        defaultSecureContext,
+        securityContextResolver,
+        requiresHandshakesWithHostname);
   }
 
   final StreamController<RawSecureSocket> _onAcceptController =
@@ -89,14 +101,19 @@ class MultiDomainSecureServer {
   Stream<RawSecureSocket> get onAccept => _onAcceptController.stream;
 
   Future<void> _accept(RawSocket rawSocket) async {
-    rawSocket.readEventsEnabled = false;
     rawSocket.writeEventsEnabled = false;
 
     var sniHostname = await extractSNIHostname(rawSocket);
+    if (sniHostname.hostname == null && requiresHandshakesWithHostname) {
+      sniHostname.subscription?.cancel();
+      rawSocket.close();
+      return;
+    }
 
     var securityContext = resolveSecureContext(sniHostname.hostname);
 
     if (securityContext == null) {
+      sniHostname.subscription?.cancel();
       rawSocket.close();
       return;
     }
@@ -106,9 +123,13 @@ class MultiDomainSecureServer {
       securityContext,
       bufferedData: sniHostname.clientHello,
       supportedProtocols: _supportedProtocols,
+      subscription: sniHostname.subscription,
     );
 
-    rawSecureSocketAsync.then(_onAcceptController.add);
+    rawSecureSocketAsync.then(_onAcceptController.add, onError: (e) {
+      _log.warning(() => "Erro establishing `RawSecureSocket`", e);
+      return null;
+    });
   }
 
   /// Resolves the [SecurityContext] for the given [hostname].
@@ -150,11 +171,15 @@ class MultiDomainSecureServer {
   RawServerSocketAsServerSocket asServerSocket({bool useSecureSocket = false}) {
     var streamController = StreamController<Socket>();
 
-    onAccept.listen((rawSecureSocket) {
-      streamController.add(useSecureSocket
-          ? rawSecureSocket.asSecureSocket()
-          : rawSecureSocket.asSocket());
-    });
+    if (useSecureSocket) {
+      onAccept.listen((rawSecureSocket) {
+        streamController.add(rawSecureSocket.asSecureSocket());
+      });
+    } else {
+      onAccept.listen((rawSecureSocket) {
+        streamController.add(rawSecureSocket.asSocket());
+      });
+    }
 
     return _rawServerSocket.asServerSocket(streamController: streamController);
   }
@@ -181,23 +206,55 @@ class MultiDomainSecureServer {
   /// Returns a [Future] with a tuple:
   /// - [clientHello]: The raw `ClientHello` data (as [Uint8List]) that was read from the socket.
   /// - [hostname]: The extracted SNI hostname, or null if not found.
-  static Future<({Uint8List clientHello, String? hostname})> extractSNIHostname(
-      RawSocket rawSocket) async {
-    var clientHello = Uint8List(0);
+  /// - [subscription]: A [StreamSubscription] to the socket's events, opened only if needed,
+  ///   allowing the caller to manage or cancel socket operations.
+  static Future<
+      ({
+        Uint8List clientHello,
+        String? hostname,
+        StreamSubscription<RawSocketEvent>? subscription
+      })> extractSNIHostname(RawSocket rawSocket) async {
+    var clientHello = rawSocket.read(1024 * 4) ?? Uint8List(0);
 
-    var retry = 0;
+    try {
+      var hostname = parseSNIHostname(clientHello);
+      if (hostname != null) {
+        return (
+          hostname: hostname,
+          clientHello: clientHello,
+          subscription: null
+        );
+      }
+    } catch (e, s) {
+      _log.severe(
+          "Error calling `parseSNIHostname`> clientHello: ${base64.encode(clientHello)}",
+          e,
+          s);
+      rethrow;
+    }
 
-    while (clientHello.length < 1024 * 16 && retry < 100) {
+    // With retry and timeout:
+
+    final initTime = DateTime.now();
+    var closed = false;
+    StreamSubscription<RawSocketEvent>? subscription;
+    Completer<bool>? readCompleter;
+
+    while (!closed &&
+        clientHello.length < 1024 * 16 &&
+        DateTime.now().difference(initTime).inSeconds < 30) {
       var buffer = rawSocket.read(1024 * 4);
       if (buffer != null && buffer.isNotEmpty) {
-        clientHello = clientHello.isNotEmpty
-            ? Uint8List.fromList(clientHello + buffer)
-            : buffer;
+        clientHello = Uint8List.fromList(clientHello + buffer);
 
         try {
           var hostname = parseSNIHostname(clientHello);
           if (hostname != null) {
-            return (hostname: hostname, clientHello: clientHello);
+            return (
+              hostname: hostname,
+              clientHello: clientHello,
+              subscription: subscription
+            );
           }
         } catch (e, s) {
           _log.severe(
@@ -207,34 +264,51 @@ class MultiDomainSecureServer {
           rethrow;
         }
       } else {
-        int delayMs;
-        switch (retry) {
-          case 0:
-          case 1:
-          case 2:
-          case 3:
-            {
-              delayMs = 1;
+        assert(readCompleter == null);
+        var completer = readCompleter = Completer<bool>();
+
+        if (subscription == null) {
+          rawSocket.readEventsEnabled = true;
+
+          subscription = rawSocket.listen((event) {
+            switch (event) {
+              case RawSocketEvent.read:
+                {
+                  readCompleter?.complete(true);
+                  readCompleter = null;
+                }
+              case RawSocketEvent.readClosed:
+              case RawSocketEvent.closed:
+                {
+                  closed = true;
+                  readCompleter?.complete(true);
+                  readCompleter = null;
+                }
+              default:
+                break;
             }
-          case 4:
-          case 5:
-          case 6:
-          case 7:
-            {
-              delayMs = 10;
-            }
-          default:
-            {
-              delayMs = math.min(10 * retry, 100);
-            }
+          });
         }
 
-        await Future.delayed(Duration(milliseconds: delayMs));
-        ++retry;
+        await completer.future.timeout(
+          Duration(seconds: 1),
+          onTimeout: () {
+            if (!completer.isCompleted) {
+              completer.complete(false);
+            }
+            return false;
+          },
+        );
+
+        readCompleter = null;
       }
     }
 
-    return (hostname: null, clientHello: clientHello);
+    return (
+      hostname: null,
+      clientHello: clientHello,
+      subscription: subscription
+    );
   }
 
   /// Parses an SSL/TLS ClientHello message to extract the Server Name Indication (SNI) hostname.
