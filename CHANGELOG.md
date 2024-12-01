@@ -1,9 +1,13 @@
 ## 1.0.6
 
 - `MultiDomainSecureServer`:
+  - Added field `requiresHandshakesWithHostname`.
   - `extractSNIHostname`: log any parsing exception/error.
   - `parseSNIHostname`: improve parsing.
   - Added `isValidHostname`.
+
+- `RawSocketAsSocket`:
+  - Implemented `_writeQueue` and `flush` using socket events (`RawSocketEvent.write`).
 
 - New `RawSecureSocketAsSecureSocket`.
 - New `RawServerSocketAsSecureServerSocket`.
