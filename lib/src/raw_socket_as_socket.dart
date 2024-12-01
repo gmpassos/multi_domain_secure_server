@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:collection';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -13,40 +14,49 @@ import 'extensions.dart';
 /// buffers.
 class RawSocketAsSocket extends Stream<Uint8List> implements Socket {
   final RawSocket _rawSocket;
-  final StreamController<Uint8List> _streamController;
+  late final StreamController<Uint8List> _streamController;
 
   @override
   Encoding encoding;
 
-  RawSocketAsSocket(this._rawSocket,
-      {StreamController<Uint8List>? streamController, Encoding? encoding})
-      : encoding = encoding ?? utf8,
-        _streamController =
-            _resolveStreamController(_rawSocket, streamController);
+  Completer<bool>? _writeCompleter;
 
-  static StreamController<Uint8List> _resolveStreamController(
-      RawSocket rawSocket, StreamController<Uint8List>? streamController) {
-    if (streamController != null) return streamController;
+  RawSocketAsSocket(this._rawSocket, {Encoding? encoding})
+      : encoding = encoding ?? utf8 {
+    _streamController = StreamController<Uint8List>();
 
-    streamController = StreamController();
+    _rawSocket.readEventsEnabled = true;
+    _rawSocket.writeEventsEnabled = false;
 
-    rawSocket.listen(
+    _rawSocket.listen(
       (event) {
-        if (event == RawSocketEvent.read) {
-          var bs = rawSocket.read();
-          if (bs != null) {
-            streamController!.add(bs);
-          }
+        switch (event) {
+          case RawSocketEvent.read:
+            {
+              var bs = _rawSocket.read();
+              if (bs != null) {
+                _streamController.add(bs);
+              }
+            }
+          case RawSocketEvent.write:
+            {
+              var writeCompleter = _writeCompleter;
+              if (writeCompleter != null && !writeCompleter.isCompleted) {
+                writeCompleter.complete(true);
+              }
+            }
+          case RawSocketEvent.readClosed:
+            {
+              _flushWriteQueue();
+            }
+          default:
+            break;
         }
       },
-      onError: (e, s) => streamController!.addError(e, s),
-      onDone: () {
-        streamController!.close();
-      },
+      onError: (e, s) => _streamController.addError(e, s),
+      onDone: () => _streamController.close(),
       cancelOnError: true,
     );
-
-    return streamController;
   }
 
   @override
@@ -75,7 +85,7 @@ class RawSocketAsSocket extends Stream<Uint8List> implements Socket {
   @override
   void add(List<int> data) {
     _checkNotAddingStream();
-    _rawSocket.write(data);
+    _writeImpl(data);
   }
 
   @override
@@ -83,7 +93,101 @@ class RawSocketAsSocket extends Stream<Uint8List> implements Socket {
     _checkNotAddingStream();
 
     var bs = encoding.encode(data.toString());
-    _rawSocket.write(bs);
+    _writeImpl(bs);
+  }
+
+  void _writeImpl(List<int> bs, [int offset = 0, int? length]) {
+    length ??= bs.length;
+
+    _flushWriteQueue();
+
+    if (_writeQueue.isNotEmpty) {
+      _writeQueue.addLast((bs, offset, length));
+      _scheduleFlushWriteQueue();
+    } else {
+      var w = _rawSocket.write(bs, offset, length);
+      if (w < length) {
+        _writeQueue.addLast((bs, offset + w, length - w));
+        _scheduleFlushWriteQueue();
+      }
+    }
+  }
+
+  final Queue<(List<int>, int, int)> _writeQueue = Queue();
+  Completer<bool>? _writeQueueComplete;
+
+  int _flushWriteQueue() {
+    var wTotal = 0;
+
+    while (_writeQueue.isNotEmpty) {
+      var e = _writeQueue.first;
+
+      var bs = e.$1;
+      var offset = e.$2;
+      var length = e.$3;
+
+      var w = _rawSocket.write(bs, offset, length);
+      wTotal += w;
+
+      if (w == length) {
+        _writeQueue.removeFirst();
+      } else if (w == 0) {
+        _scheduleFlushWriteQueue(slow: true);
+        return wTotal;
+      } else {
+        _writeQueue.removeFirst();
+        _writeQueue.addFirst((bs, offset + w, length - w));
+        _scheduleFlushWriteQueue(fast: true);
+        return wTotal;
+      }
+    }
+
+    assert(_writeQueue.isEmpty);
+
+    var writeQueueComplete = _writeQueueComplete;
+    if (writeQueueComplete != null && !writeQueueComplete.isCompleted) {
+      writeQueueComplete.complete(true);
+      _writeQueueComplete = null;
+    }
+
+    return wTotal;
+  }
+
+  Future<bool>? _scheduleFlushWriteQueueFuture;
+
+  void _scheduleFlushWriteQueue({bool slow = false, bool fast = false}) {
+    var future = _scheduleFlushWriteQueueFuture;
+    if (future != null) return;
+
+    Duration delay;
+    if (fast) {
+      delay = Duration(milliseconds: 10);
+    } else {
+      var delayMs = slow ? 1000 : 100;
+      delay = Duration(milliseconds: delayMs);
+    }
+
+    var writeCompleter = _writeCompleter ??= Completer<bool>();
+    _rawSocket.writeEventsEnabled = true;
+
+    _scheduleFlushWriteQueueFuture =
+        future = writeCompleter.future.timeout(delay, onTimeout: () {
+      if (!writeCompleter.isCompleted) {
+        writeCompleter.complete(false);
+      }
+      return false;
+    });
+
+    future.then((ready) {
+      if (identical(future, _scheduleFlushWriteQueueFuture)) {
+        _scheduleFlushWriteQueueFuture = null;
+      }
+      if (identical(writeCompleter, _writeCompleter)) {
+        _writeCompleter = null;
+      }
+      _rawSocket.writeEventsEnabled = false;
+      _flushWriteQueue();
+    });
   }
 
   @override
@@ -95,10 +199,10 @@ class RawSocketAsSocket extends Stream<Uint8List> implements Socket {
 
     if (object != '') {
       var bs = encoding.encode(object.toString());
-      _rawSocket.write(bs);
+      _writeImpl(bs);
     }
 
-    _rawSocket.write(const [10]); // New line: \n
+    _writeImpl(const [10]); // New line: \n
   }
 
   @override
@@ -112,22 +216,22 @@ class RawSocketAsSocket extends Stream<Uint8List> implements Socket {
         var o = itr.current;
         {
           var bs = encoding.encode(o.toString());
-          _rawSocket.write(bs);
+          _writeImpl(bs);
         }
 
         var separatorBs = encoding.encode(separator);
 
         while (itr.moveNext()) {
           var o = itr.current;
-          _rawSocket.write(separatorBs);
+          _writeImpl(separatorBs);
           var bs = encoding.encode(o.toString());
-          _rawSocket.write(bs);
+          _writeImpl(bs);
         }
       }
     } else {
       for (var o in objects) {
         var bs = encoding.encode(o.toString());
-        _rawSocket.write(bs);
+        _writeImpl(bs);
       }
     }
   }
@@ -148,7 +252,7 @@ class RawSocketAsSocket extends Stream<Uint8List> implements Socket {
       final completer = Completer<void>();
 
       final subscription = stream.listen(
-        (data) => _rawSocket.write(data),
+        (data) => _writeImpl(data),
         onError: (e, s) => completer.completeError(e, s),
         onDone: () => completer.complete(),
         cancelOnError: true, // Cancel the subscription on error
@@ -179,18 +283,40 @@ class RawSocketAsSocket extends Stream<Uint8List> implements Socket {
 
   @override
   Future flush() {
-    return Future.value();
+    if (_writeQueue.isEmpty) {
+      return Future.value();
+    }
+
+    return flushImpl();
+  }
+
+  Future<void> flushImpl() async {
+    while (_writeQueue.isNotEmpty) {
+      var w = _flushWriteQueue();
+
+      if (w == 0) {
+        assert(_writeQueue.isNotEmpty);
+        assert(_scheduleFlushWriteQueueFuture != null);
+
+        var writeQueueComplete = _writeQueueComplete ??= Completer();
+        await writeQueueComplete.future;
+      }
+    }
   }
 
   @override
   Future<void> close() async {
+    _flushWriteQueue();
+    _writeQueue.clear();
     await _rawSocket.close();
   }
 
   @override
   void destroy() {
+    _flushWriteQueue();
+    _writeQueue.clear();
+    _rawSocket.shutdown(SocketDirection.both);
     _rawSocket.close();
-    _streamController.close();
   }
 }
 
@@ -202,7 +328,7 @@ class RawSecureSocketAsSecureSocket extends RawSocketAsSocket
 
   //ignore: use_super_parameters
   RawSecureSocketAsSecureSocket(RawSecureSocket rawSecureSocket,
-      {super.streamController, super.encoding})
+      {super.encoding})
       : super(rawSecureSocket);
 
   @override
