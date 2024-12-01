@@ -273,23 +273,26 @@ class MultiDomainSecureServer {
         continue;
       }
 
-      offset += 2;
-
       // Extension Length (2 bytes):
-      var extensionLength =
-          (clientHelloBuffer[offset] << 8) | clientHelloBuffer[offset + 1];
+      var extensionLength = (clientHelloBuffer[offset + 2] << 8) |
+          clientHelloBuffer[offset + 2 + 1];
 
       // Server Name List Length (2 bytes):
-      var extensionListLength =
-          (clientHelloBuffer[offset + 2] << 8) | clientHelloBuffer[offset + 3];
+      var extensionListLength = (clientHelloBuffer[offset + 2 + 2] << 8) |
+          clientHelloBuffer[offset + 2 + 3];
 
       if (extensionLength <= extensionListLength) {
         ++offset;
         continue;
       }
 
+      if ((offset + 2 + 4 + extensionListLength) > clientHelloBuffer.length) {
+        ++offset;
+        continue;
+      }
+
       // Server Name Type (1 byte):
-      var serverNameType = clientHelloBuffer[offset + 4];
+      var serverNameType = clientHelloBuffer[offset + 2 + 4];
 
       // 0x00: Hostname
       if (serverNameType != 0) {
@@ -297,14 +300,14 @@ class MultiDomainSecureServer {
         continue;
       }
 
-      var serverNameLength =
-          (clientHelloBuffer[offset + 5] << 8) | clientHelloBuffer[offset + 6];
+      var serverNameLength = (clientHelloBuffer[offset + 2 + 5] << 8) |
+          clientHelloBuffer[offset + 2 + 6];
       if (serverNameLength >= extensionLength) {
         ++offset;
         continue;
       }
 
-      var serverNameOffset = offset + 7;
+      var serverNameOffset = offset + 2 + 7;
 
       // The Server Name bytes:
       var serverNameBytes = clientHelloBuffer.sublist(
@@ -312,11 +315,25 @@ class MultiDomainSecureServer {
 
       // Server Name ASCII `String`:
       var serverName = String.fromCharCodes(serverNameBytes);
+
+      if (!isValidHostname(serverName)) {
+        ++offset;
+        continue;
+      }
+
       return serverName;
     }
 
     // No SNI extension was found:
     return null;
+  }
+
+  static final regexpDomainName = RegExp(
+      r'^(?:(?!-)[A-Za-z0-9-]+(?<!-)|(?!-)[A-Za-z0-9-]{1,63}(?<!-)\.(?!-)([A-Za-z0-9-]{1,63})(\.[A-Za-z]{2,})?)$');
+
+  static bool isValidHostname(String? hostname) {
+    if (hostname == null || hostname.isEmpty) return false;
+    return regexpDomainName.hasMatch(hostname);
   }
 
   @override

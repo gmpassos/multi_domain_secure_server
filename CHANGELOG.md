@@ -2,6 +2,8 @@
 
 - `MultiDomainSecureServer`:
   - `extractSNIHostname`: log any parsing exception/error.
+  - `parseSNIHostname`: improve parsing.
+  - Added `isValidHostname`.
 
 ## 1.0.5
 
