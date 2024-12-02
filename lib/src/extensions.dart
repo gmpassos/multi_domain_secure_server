@@ -68,16 +68,21 @@ extension RawServerSocketExtension on RawServerSocket {
   /// This method wraps the [RawServerSocket] to provide a higher-level interface for server socket
   /// operations, allowing it to be used where a [ServerSocket] is expected.
   RawServerSocketAsServerSocket asServerSocket(
-          {StreamController<Socket>? streamController}) =>
-      RawServerSocketAsServerSocket(this, streamController: streamController);
+          {StreamSubscription<RawSocket>? acceptSubscription,
+          StreamController<Socket>? streamController}) =>
+      RawServerSocketAsServerSocket(this,
+          acceptSubscription: acceptSubscription,
+          streamController: streamController);
 
   /// Converts a [RawServerSocket] into a [RawServerSocketAsSecureServerSocket], which implements [SecureServerSocket].
   ///
   /// This method wraps the [RawServerSocket] to provide a higher-level interface for server socket
   /// operations, allowing it to be used where a [SecureServerSocket] is expected.
   RawServerSocketAsSecureServerSocket asSecureServerSocket(
-          {required StreamController<SecureSocket> streamController}) =>
+          {StreamSubscription<RawSocket>? acceptSubscription,
+          required StreamController<SecureSocket> streamController}) =>
       RawServerSocketAsSecureServerSocket(this,
+          acceptSubscription: acceptSubscription,
           streamController: streamController);
 }
 
@@ -87,7 +92,9 @@ extension RawSecureServerSocketExtension on RawSecureServerSocket {
   /// This method wraps the [RawSecureServerSocket] to provide a higher-level interface for server socket
   /// operations, allowing it to be used where a [SecureServerSocket] is expected.
   RawSecureServerSocketAsSecureServerSocket asSecureServerSocket(
-          {StreamController<SecureSocket>? streamController}) =>
+          {StreamSubscription<RawSecureSocket>? acceptSubscription,
+          StreamController<SecureSocket>? streamController}) =>
       RawSecureServerSocketAsSecureServerSocket(this,
+          acceptSubscription: acceptSubscription,
           streamController: streamController);
 }
