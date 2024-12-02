@@ -1,7 +1,17 @@
 ## 1.0.9
 
+- `MultiDomainSecureServer`:
+  - Optimize `_accept`.
+  - Optimize `extractSNIHostname`.
+  - Added `parseSNIHostnameSafe`.
+  - Improve `parseSNIHostname`.
+
 - Moved `localhost` private key and certificate
   from `benchmark/shelf_benchmark.dart` to `test/localhost_cert.dart`.
+
+- Improve tests.
+
+- test: ^1.25.10
 
 ## 1.0.8
 

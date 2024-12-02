@@ -32,8 +32,6 @@ void main() async {
   exit(0);
 }
 
-typedef JobSetup = ({int port, String serverText, Uri requestUri});
-
 class ShelfBenchmarkHTTP extends ShelfBenchmark {
   ShelfBenchmarkHTTP({required super.textLength, required super.ipv6})
       : super('HTTP');
@@ -57,6 +55,8 @@ class ShelfBenchmarkHTTPS extends ShelfBenchmark {
       setupSecureServer(textLength, ipv6, multiDomain);
 }
 
+typedef JobSetup = ({int port, String serverText, Uri requestUri});
+
 abstract class ShelfBenchmark extends Benchmark<JobSetup, HttpServer> {
   final int textLength;
   final bool ipv6;
@@ -68,11 +68,33 @@ abstract class ShelfBenchmark extends Benchmark<JobSetup, HttpServer> {
   Future<BenchmarkSetupResult<JobSetup, HttpServer>> setup();
 
   @override
-  Future<void> job(JobSetup setup, HttpServer? service) => jobRequest(setup);
+  Future<void> job(JobSetup setup, HttpServer? service) async {
+    var httpClient = HttpClient();
+
+    httpClient.badCertificateCallback = _badCertificateCallback;
+
+    var request = await httpClient.getUrl(setup.requestUri);
+    var response = await request.close();
+    final responseText = await response.transform(utf8.decoder).join();
+    if (responseText != setup.serverText) {
+      throw StateError(
+          "Invalid response text:\n<<$responseText>>\n!=\n<<${setup.serverText}>>");
+    }
+  }
+
+  bool _badCertificateCallback(cert, host, port) {
+    //print('badCertificateCallback[$host:$port]> $cert');
+    return true;
+  }
 
   @override
-  Future<void> shutdown(JobSetup setup, HttpServer? object) =>
-      shutdownServer(setup, object);
+  Future<void> shutdown(JobSetup setup, HttpServer? server) async {
+    if (server != null) {
+      print(
+          '${Isolate.current.debugName} -- Closing `HttpServer`: ${server.address}:${server.port}');
+      await server.close(force: true);
+    }
+  }
 }
 
 Future<BenchmarkSetupResult<JobSetup, HttpServer>> setupServer(
@@ -98,33 +120,6 @@ Future<BenchmarkSetupResult<JobSetup, HttpServer>> setupSecureServer(
     setup: (port: port, serverText: serverText, requestUri: requestUri),
     service: server
   );
-}
-
-Future<void> shutdownServer(JobSetup setup, HttpServer? server) async {
-  if (server != null) {
-    print(
-        '${Isolate.current.debugName} -- Closing `HttpServer`: ${server.address}:${server.port}');
-    await server.close(force: true);
-  }
-}
-
-Future<void> jobRequest(JobSetup setup) async {
-  var httpClient = HttpClient();
-
-  httpClient.badCertificateCallback = badCertificateCallback;
-
-  var request = await httpClient.getUrl(setup.requestUri);
-  var response = await request.close();
-  final responseText = await response.transform(utf8.decoder).join();
-  if (responseText != setup.serverText) {
-    throw StateError(
-        "Invalid response text:\n<<$responseText>>\n!=\n<<${setup.serverText}>>");
-  }
-}
-
-bool badCertificateCallback(cert, host, port) {
-  //print('badCertificateCallback[$host:$port]> $cert');
-  return true;
 }
 
 Future<(HttpServer, String)> createServer(
