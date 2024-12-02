@@ -1,8 +1,16 @@
 ## 1.0.7
 
+- `MultiDomainSecureServer`:
+  - Added field `_acceptSubscription`.
+  - Added `asHttpServer`.
+    - New class `_HttpServerSecureMultiDomain`.
+
+- `RawSocketAsSocket`:
+  - Improve `close` and `destroy`.
+
 - New `benchmark/shelf_benchmark.dart`.
 
-- async_benchmark: ^1.0.0
+- async_benchmark: ^1.0.1
 
 ## 1.0.6
 

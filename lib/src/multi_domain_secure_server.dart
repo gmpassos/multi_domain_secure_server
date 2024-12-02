@@ -432,8 +432,9 @@ class MultiDomainSecureServer {
   /// Attaches an [HttpServer] to this [MultiDomainSecureServer]
   /// using [asServerSocket](useSecureSocket: true).
   ///
-  /// *NOTE: Do not use [HttpServer.listenOn], since it won't close the server
-  /// socket (see its documentation).*
+  /// *NOTE: Do not use [HttpServer.listenOn], as it won't close the server
+  /// socket (see its documentation). This method returns a
+  /// `_HttpServerSecureMultiDomain`, which resolves this issue.*
   HttpServer asHttpServer() => _HttpServerSecureMultiDomain(this);
 
   @override
@@ -454,6 +455,10 @@ class _HttpServerSecureMultiDomain implements HttpServer {
         multiDomainSecureServer.asServerSocket(useSecureSocket: true));
     return _HttpServerSecureMultiDomain._(multiDomainSecureServer, server);
   }
+
+  @override
+  String toString() =>
+      '_HttpServerSecureMultiDomain{address: ${_server.address}, port: ${_server.port}}';
 
   @override
   bool get autoCompress => _server.autoCompress;

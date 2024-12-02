@@ -12,11 +12,14 @@ void main() async {
   final profile = BenchmarkProfile.normal;
 
   var benchmarks = [
-    ShelfBenchmarkHTTP(),
-    ShelfBenchmarkHTTPS(),
+    ShelfBenchmarkHTTP(ipv6: false),
+    ShelfBenchmarkHTTP(ipv6: true),
+    ShelfBenchmarkHTTPS(ipv6: false),
+    ShelfBenchmarkHTTPS(ipv6: true),
   ];
 
-  await benchmarks.runAll(profile: profile, setupOnIsolate: true);
+  await benchmarks.runAll(
+      profile: profile, setupOnIsolate: true, verbose: true);
 
   exit(0);
 }
@@ -24,22 +27,26 @@ void main() async {
 typedef JobSetup = ({int port, String serverText, Uri requestUri});
 
 class ShelfBenchmarkHTTP extends ShelfBenchmark {
-  ShelfBenchmarkHTTP() : super('HTTP');
-
-  @override
-  Future<BenchmarkSetupResult<JobSetup, HttpServer>> setup() => setupServer();
-}
-
-class ShelfBenchmarkHTTPS extends ShelfBenchmark {
-  ShelfBenchmarkHTTPS() : super('HTTPS');
+  ShelfBenchmarkHTTP({required super.ipv6}) : super('HTTP');
 
   @override
   Future<BenchmarkSetupResult<JobSetup, HttpServer>> setup() =>
-      setupSecureServer();
+      setupServer(ipv6);
+}
+
+class ShelfBenchmarkHTTPS extends ShelfBenchmark {
+  ShelfBenchmarkHTTPS({required super.ipv6}) : super('HTTPS');
+
+  @override
+  Future<BenchmarkSetupResult<JobSetup, HttpServer>> setup() =>
+      setupSecureServer(ipv6);
 }
 
 abstract class ShelfBenchmark extends Benchmark<JobSetup, HttpServer> {
-  ShelfBenchmark(String type) : super('shelf ($type)');
+  final bool ipv6;
+
+  ShelfBenchmark(String type, {required this.ipv6})
+      : super('shelf ($type){${ipv6 ? 'IPv6' : 'IPv4'}}');
 
   @override
   Future<BenchmarkSetupResult<JobSetup, HttpServer>> setup();
@@ -52,9 +59,10 @@ abstract class ShelfBenchmark extends Benchmark<JobSetup, HttpServer> {
       shutdownServer(setup, object);
 }
 
-Future<BenchmarkSetupResult<JobSetup, HttpServer>> setupServer() async {
+Future<BenchmarkSetupResult<JobSetup, HttpServer>> setupServer(
+    bool ipv6) async {
   var port = 9081;
-  var (server, serverText) = await createServer(port, 1024);
+  var (server, serverText) = await createServer(port, 1024, ipv6);
   var requestUri = Uri.parse("http://localhost:$port/http");
 
   return (
@@ -63,9 +71,10 @@ Future<BenchmarkSetupResult<JobSetup, HttpServer>> setupServer() async {
   );
 }
 
-Future<BenchmarkSetupResult<JobSetup, HttpServer>> setupSecureServer() async {
+Future<BenchmarkSetupResult<JobSetup, HttpServer>> setupSecureServer(
+    bool ipv6) async {
   var port = 9443;
-  var (server, serverText) = await createSecureServer(port, 1024);
+  var (server, serverText) = await createSecureServer(port, 1024, ipv6);
   var requestUri = Uri.parse("https://localhost:$port/https");
 
   return (
@@ -101,13 +110,14 @@ bool badCertificateCallback(cert, host, port) {
   return true;
 }
 
-Future<(HttpServer, String)> createServer(int port, int responseLength) async {
+Future<(HttpServer, String)> createServer(
+    int port, int responseLength, bool ipv6) async {
   final responseText = generateText(responseLength);
 
   final handler = createHandler(responseText);
 
-  var server =
-      await shelf_io.serve(handler, InternetAddress.loopbackIPv6, port);
+  var server = await shelf_io.serve(handler,
+      ipv6 ? InternetAddress.loopbackIPv6 : InternetAddress.loopbackIPv4, port);
   return (server, responseText);
 }
 
@@ -175,7 +185,7 @@ laZR9YK9boPB0KAh0w==
 ''';
 
 Future<(HttpServer, String)> createSecureServer(
-    int port, int responseLength) async {
+    int port, int responseLength, bool ipv6) async {
   var defaultSecureContext = SecurityContext();
 
   defaultSecureContext
@@ -184,13 +194,12 @@ Future<(HttpServer, String)> createSecureServer(
   defaultSecureContext.usePrivateKeyBytes(latin1.encode(localhostPrivateKey));
 
   var server = await MultiDomainSecureServer.bind(
-    InternetAddress.loopbackIPv4,
+    ipv6 ? InternetAddress.loopbackIPv6 : InternetAddress.loopbackIPv4,
     port,
     defaultSecureContext: defaultSecureContext,
   );
 
-  var httpServer =
-      HttpServer.listenOn(server.asServerSocket(useSecureSocket: true));
+  var httpServer = server.asHttpServer();
 
   final responseText = generateText(responseLength);
 

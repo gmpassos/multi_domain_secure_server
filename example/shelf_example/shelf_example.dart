@@ -35,8 +35,7 @@ void main() async {
 
   // Starts the HTTP server and listens for incoming
   // connections on the provided ServerSocket:
-  var httpServer =
-      HttpServer.listenOn(server.asServerSocket(useSecureSocket: true));
+  var httpServer = server.asHttpServer();
 
   // Create a handler for incoming requests:
   final handler = Pipeline().addMiddleware(logRequests()).addHandler(
