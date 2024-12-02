@@ -1,15 +1,15 @@
 name: multi_domain_secure_server
 description: A SecureServerSocket that supports multiple domains with dynamic SecurityContext resolution.
-version: 1.0.8
+version: 1.0.9
 repository: https://github.com/gmpassos/multi_domain_secure_server
 
 environment:
   sdk: ^3.5.0
 
 false_secrets:
-  ## Contains a `localhost` private key for
-  ## benchmark of HTTPS connections:
-  - benchmark/shelf_benchmark.dart
+  ## Contains a `localhost` private key and certificate
+  ## for tests/benchmarks of HTTPS connections:
+  - test/localhost_cert.dart
 
 dependencies:
   logging: ^1.3.0

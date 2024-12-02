@@ -1,3 +1,8 @@
+## 1.0.9
+
+- Moved `localhost` private key and certificate
+  from `benchmark/shelf_benchmark.dart` to `test/localhost_cert.dart`.
+
 ## 1.0.8
 
 - `MultiDomainSecureServer`:
