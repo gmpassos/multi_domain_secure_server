@@ -11,11 +11,17 @@ import 'package:shelf/shelf_io.dart' as shelf_io;
 void main() async {
   final profile = BenchmarkProfile.normal;
 
+  final textLength = 1024;
+  print('textLength: $textLength');
+
   var benchmarks = [
-    ShelfBenchmarkHTTP(ipv6: false),
-    ShelfBenchmarkHTTP(ipv6: true),
-    ShelfBenchmarkHTTPS(ipv6: false),
-    ShelfBenchmarkHTTPS(ipv6: true),
+    ShelfBenchmarkHTTP(textLength: textLength, ipv6: false),
+    ShelfBenchmarkHTTP(textLength: textLength, ipv6: true),
+    ShelfBenchmarkHTTPS(
+        textLength: textLength, ipv6: false, multiDomain: false),
+    ShelfBenchmarkHTTPS(textLength: textLength, ipv6: false, multiDomain: true),
+    ShelfBenchmarkHTTPS(textLength: textLength, ipv6: true, multiDomain: false),
+    ShelfBenchmarkHTTPS(textLength: textLength, ipv6: true, multiDomain: true),
   ];
 
   await benchmarks.runAll(
@@ -27,25 +33,33 @@ void main() async {
 typedef JobSetup = ({int port, String serverText, Uri requestUri});
 
 class ShelfBenchmarkHTTP extends ShelfBenchmark {
-  ShelfBenchmarkHTTP({required super.ipv6}) : super('HTTP');
+  ShelfBenchmarkHTTP({required super.textLength, required super.ipv6})
+      : super('HTTP');
 
   @override
   Future<BenchmarkSetupResult<JobSetup, HttpServer>> setup() =>
-      setupServer(ipv6);
+      setupServer(textLength, ipv6);
 }
 
 class ShelfBenchmarkHTTPS extends ShelfBenchmark {
-  ShelfBenchmarkHTTPS({required super.ipv6}) : super('HTTPS');
+  final bool multiDomain;
+
+  ShelfBenchmarkHTTPS(
+      {required super.textLength,
+      required super.ipv6,
+      required this.multiDomain})
+      : super('HTTPS${multiDomain ? '+multi' : ''}');
 
   @override
   Future<BenchmarkSetupResult<JobSetup, HttpServer>> setup() =>
-      setupSecureServer(ipv6);
+      setupSecureServer(textLength, ipv6, multiDomain);
 }
 
 abstract class ShelfBenchmark extends Benchmark<JobSetup, HttpServer> {
+  final int textLength;
   final bool ipv6;
 
-  ShelfBenchmark(String type, {required this.ipv6})
+  ShelfBenchmark(String type, {required this.textLength, required this.ipv6})
       : super('shelf ($type){${ipv6 ? 'IPv6' : 'IPv4'}}');
 
   @override
@@ -60,9 +74,9 @@ abstract class ShelfBenchmark extends Benchmark<JobSetup, HttpServer> {
 }
 
 Future<BenchmarkSetupResult<JobSetup, HttpServer>> setupServer(
-    bool ipv6) async {
+    int textLength, bool ipv6) async {
   var port = 9081;
-  var (server, serverText) = await createServer(port, 1024, ipv6);
+  var (server, serverText) = await createServer(port, textLength, ipv6);
   var requestUri = Uri.parse("http://localhost:$port/http");
 
   return (
@@ -72,9 +86,10 @@ Future<BenchmarkSetupResult<JobSetup, HttpServer>> setupServer(
 }
 
 Future<BenchmarkSetupResult<JobSetup, HttpServer>> setupSecureServer(
-    bool ipv6) async {
+    int textLength, bool ipv6, bool multiDomain) async {
   var port = 9443;
-  var (server, serverText) = await createSecureServer(port, 1024, ipv6);
+  var (server, serverText) =
+      await createSecureServer(port, textLength, ipv6, multiDomain);
   var requestUri = Uri.parse("https://localhost:$port/https");
 
   return (
@@ -185,7 +200,7 @@ laZR9YK9boPB0KAh0w==
 ''';
 
 Future<(HttpServer, String)> createSecureServer(
-    int port, int responseLength, bool ipv6) async {
+    int port, int responseLength, bool ipv6, bool multiDomain) async {
   var defaultSecureContext = SecurityContext();
 
   defaultSecureContext
@@ -193,19 +208,27 @@ Future<(HttpServer, String)> createSecureServer(
 
   defaultSecureContext.usePrivateKeyBytes(latin1.encode(localhostPrivateKey));
 
-  var server = await MultiDomainSecureServer.bind(
-    ipv6 ? InternetAddress.loopbackIPv6 : InternetAddress.loopbackIPv4,
-    port,
-    defaultSecureContext: defaultSecureContext,
-  );
-
-  var httpServer = server.asHttpServer();
-
   final responseText = generateText(responseLength);
 
   final handler = createHandler(responseText);
 
-  shelf_io.serveRequests(httpServer, handler);
+  var address =
+      ipv6 ? InternetAddress.loopbackIPv6 : InternetAddress.loopbackIPv4;
+
+  HttpServer httpServer;
+  if (multiDomain) {
+    var server = await MultiDomainSecureServer.bind(
+      address,
+      port,
+      defaultSecureContext: defaultSecureContext,
+    );
+
+    httpServer = server.asHttpServer();
+    shelf_io.serveRequests(httpServer, handler);
+  } else {
+    httpServer = await shelf_io.serve(handler, address, port,
+        securityContext: defaultSecureContext);
+  }
 
   return (httpServer, responseText);
 }
