@@ -1,3 +1,9 @@
+## 1.0.7
+
+- New `benchmark/shelf_benchmark.dart`.
+
+- async_benchmark: ^1.0.0
+
 ## 1.0.6
 
 - `MultiDomainSecureServer`:
