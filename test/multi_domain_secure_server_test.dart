@@ -6,9 +6,11 @@ import 'dart:typed_data';
 import 'package:multi_domain_secure_server/multi_domain_secure_server.dart';
 import 'package:test/test.dart';
 
+import 'localhost_cert.dart';
+
 void main() {
   group('MultiDomainSecureServer', () {
-    test('Basic (null SecurityContext)', () async {
+    test('bind (null SecurityContext)', () async {
       final port = 9443;
 
       var onHostError = Completer<String>();
@@ -46,6 +48,62 @@ void main() {
 
       expect(socket, isNull);
       expect(socketError, isA<HandshakeException>());
+
+      await server.close();
+    });
+
+    test('bind (localhost SecurityContext)', () async {
+      final port = 9444;
+
+      var hostsResolved = <String?>[];
+      var hostsErrors = <String?>[];
+
+      var localhostSecurityContext = loadLocalhostSecurityContext();
+
+      var server = await MultiDomainSecureServer.bind(
+        InternetAddress.anyIPv4,
+        port,
+        securityContextResolver: (host) {
+          if (host == 'localhost') {
+            hostsResolved.add(host);
+            return localhostSecurityContext;
+          } else {
+            hostsErrors.add(host);
+            return null;
+          }
+        },
+      );
+
+      expect(server.rawServerSocket.port, equals(port));
+
+      var acceptedSocket = Completer<RawSecureSocket?>();
+
+      server.onAccept.listen((socket) {
+        socket.write(List.generate(10, (i) => i));
+        acceptedSocket.complete(socket);
+      });
+
+      var socketAsync = SecureSocket.connect(
+        'localhost',
+        port,
+        onBadCertificate: (_) => true,
+      );
+
+      print('hostErrors: $hostsErrors');
+      expect(hostsErrors, isEmpty);
+
+      var socket = await socketAsync;
+      print('socket: $socket');
+
+      expect(await acceptedSocket.future, isNotNull);
+
+      var receivedBytes = await socket.first;
+      expect(receivedBytes, equals(List.generate(10, (i) => i)));
+
+      await socket.close();
+
+      print('Close server');
+      await server.close();
     });
 
     test('isValidHostname', () {
@@ -78,7 +136,26 @@ void main() {
           isFalse);
     });
 
-    test('parseSNIHostname', () {
+    test('parseSNIHostname (partial)', () {
+      var clientHello1 = Uint8List.fromList(
+          '22 3 1 1 60 1 0 1 56 3 3 61 102 193 32 209 174 53 83 188 33 75 119 88 137 2 44 45 206 110 171 116 31 225 143 242 253 243 48 100 205 70 97 32 44 215 108 123 47 114 71 97 202 224 139 71 86 115 204 215 150 142 34 2 242 186 145 113 134 164 74 82 139 166 48 41 0 98 19 2 19 3 19 1 192 48 192 44 192 40 192 36 192 20 192 10 0 159 0 107 0 57 204 169 204 168 204 170 255 133 0 196 0 136 0 129 0 157 0 61 0 53 0 192 0 132 192 47 192 43 192 39 192 35 192 19 192 9 0 158 0 103 0 51 0 190 0 69 0 156 0 60 0 47 0 186 0 65 192 17 192 7 0 5 0 4 192 18 192 8 0 22 0 10 0 255 1 0 0 141 0 43 0 9 8 3 4 3 3 3 2 3 1 0 51 0 38 0 36 0 29 0 32 184 1 34 43 208 205 96 129 192 251 165 124 120 253 218 236 32 6 190 57 24 207 103 41 146 78 97 177 153 195 174 2 0 0 0 16 0 14 0 0 11 102 111 111 111 98 97 114 46 99 111 109 0 11 0 2 1 0 0 10 0 10 0 8 0 29 0 23 0 24 0 25 0 13 0 24 0 22 8 6 6 1 6 3 8 5 5 1 5 3 8 4 4 1 4 3 2 1 2 3 0 16 0 14 0 12 2 104 50 8 104 116 116 112 47 49 46 49'
+              .split(' ')
+              .map(int.parse)
+              .toList());
+
+      for (var i = 0; i < clientHello1.length; ++i) {
+        var partial = clientHello1.sublist(0, i);
+        var hostname = MultiDomainSecureServer.parseSNIHostname(partial);
+
+        if (i >= 255) {
+          expect(hostname, equals('fooobar.com'));
+        } else {
+          expect(hostname, isNull);
+        }
+      }
+    });
+
+    test('parseSNIHostname (valid)', () {
       var clientHello1 = Uint8List.fromList(
           '22 3 1 1 60 1 0 1 56 3 3 61 102 193 32 209 174 53 83 188 33 75 119 88 137 2 44 45 206 110 171 116 31 225 143 242 253 243 48 100 205 70 97 32 44 215 108 123 47 114 71 97 202 224 139 71 86 115 204 215 150 142 34 2 242 186 145 113 134 164 74 82 139 166 48 41 0 98 19 2 19 3 19 1 192 48 192 44 192 40 192 36 192 20 192 10 0 159 0 107 0 57 204 169 204 168 204 170 255 133 0 196 0 136 0 129 0 157 0 61 0 53 0 192 0 132 192 47 192 43 192 39 192 35 192 19 192 9 0 158 0 103 0 51 0 190 0 69 0 156 0 60 0 47 0 186 0 65 192 17 192 7 0 5 0 4 192 18 192 8 0 22 0 10 0 255 1 0 0 141 0 43 0 9 8 3 4 3 3 3 2 3 1 0 51 0 38 0 36 0 29 0 32 184 1 34 43 208 205 96 129 192 251 165 124 120 253 218 236 32 6 190 57 24 207 103 41 146 78 97 177 153 195 174 2 0 0 0 16 0 14 0 0 11 102 111 111 111 98 97 114 46 99 111 109 0 11 0 2 1 0 0 10 0 10 0 8 0 29 0 23 0 24 0 25 0 13 0 24 0 22 8 6 6 1 6 3 8 5 5 1 5 3 8 4 4 1 4 3 2 1 2 3 0 16 0 14 0 12 2 104 50 8 104 116 116 112 47 49 46 49'
               .split(' ')

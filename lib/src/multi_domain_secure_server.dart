@@ -102,34 +102,40 @@ class MultiDomainSecureServer {
   /// Emits a [RawSecureSocket] each time a new connection is successfully accepted.
   Stream<RawSecureSocket> get onAccept => _onAcceptController.stream;
 
-  Future<void> _accept(RawSocket rawSocket) async {
+  void _accept(RawSocket rawSocket) {
     rawSocket.writeEventsEnabled = false;
 
-    var sniHostname = await extractSNIHostname(rawSocket);
-    if (sniHostname.hostname == null && requiresHandshakesWithHostname) {
-      sniHostname.subscription?.cancel();
-      rawSocket.close();
-      return;
-    }
+    extractSNIHostname(rawSocket).then((sniHostname) {
+      if (sniHostname.hostname == null && requiresHandshakesWithHostname) {
+        sniHostname.subscription?.cancel();
+        rawSocket.close();
+        return;
+      }
 
-    var securityContext = resolveSecureContext(sniHostname.hostname);
-    if (securityContext == null) {
-      sniHostname.subscription?.cancel();
-      rawSocket.close();
-      return;
-    }
+      var securityContext = resolveSecureContext(sniHostname.hostname);
+      if (securityContext == null) {
+        sniHostname.subscription?.cancel();
+        rawSocket.close();
+        return;
+      }
 
-    var rawSecureSocketAsync = RawSecureSocket.secureServer(
-      rawSocket,
-      securityContext,
-      bufferedData: sniHostname.clientHello,
-      supportedProtocols: _supportedProtocols,
-      subscription: sniHostname.subscription,
-    );
+      var rawSecureSocketAsync = RawSecureSocket.secureServer(
+        rawSocket,
+        securityContext,
+        bufferedData: sniHostname.clientHello,
+        supportedProtocols: _supportedProtocols,
+        subscription: sniHostname.subscription,
+      );
 
-    rawSecureSocketAsync.then(_onAcceptController.add, onError: (e) {
-      _log.warning(() => "Erro establishing `RawSecureSocket`", e);
-      return null;
+      rawSecureSocketAsync.then((rawSecureSocket) {
+        if (!_closed) {
+          _onAcceptController.add(rawSecureSocket);
+        }
+      }, onError: (e) {
+        _log.warning(
+            () => "Erro establishing `RawSecureSocket` on accepted `RawSocket`",
+            e);
+      });
     });
   }
 
@@ -223,67 +229,57 @@ class MultiDomainSecureServer {
     var clientHello = _emptyBytes;
 
     var bytesAvailable = rawSocket.available();
+    // Check if initial bytes are already available:
     if (bytesAvailable > 0) {
       clientHello = rawSocket.read(1024) ?? _emptyBytes;
 
-      try {
-        var hostname = parseSNIHostname(clientHello);
-        if (hostname != null) {
-          return (
-            hostname: hostname,
-            clientHello: clientHello,
-            subscription: null
-          );
-        }
-      } catch (e, s) {
-        _log.severe(
-            "Error calling `parseSNIHostname`> clientHello: ${base64.encode(clientHello)}",
-            e,
-            s);
-        rethrow;
+      var hostname = parseSNIHostnameSafe(clientHello);
+      if (hostname != null) {
+        return (
+          hostname: hostname,
+          clientHello: clientHello,
+          subscription: null
+        );
       }
     }
 
-    // With retry and timeout:
-
-    final initTime = DateTime.now();
+    // No bytes yet, let's try using `rawSocket.listen` events and `Completer`:
 
     var closed = false;
     StreamSubscription<RawSocketEvent>? subscription;
     Completer<bool>? readCompleter = Completer<bool>();
 
-    {
-      rawSocket.readEventsEnabled = true;
+    rawSocket.readEventsEnabled = true;
+    subscription = rawSocket.listen((event) {
+      switch (event) {
+        case RawSocketEvent.read:
+          {
+            readCompleter?.complete(true);
+            readCompleter = null;
+          }
+        case RawSocketEvent.readClosed:
+        case RawSocketEvent.closed:
+          {
+            closed = true;
+            readCompleter?.complete(true);
+            readCompleter = null;
+          }
+        default:
+          break;
+      }
+    });
 
-      subscription = rawSocket.listen((event) {
-        switch (event) {
-          case RawSocketEvent.read:
-            {
-              readCompleter?.complete(true);
-              readCompleter = null;
-            }
-          case RawSocketEvent.readClosed:
-          case RawSocketEvent.closed:
-            {
-              closed = true;
-              readCompleter?.complete(true);
-              readCompleter = null;
-            }
-          default:
-            break;
-        }
-      });
-    }
+    DateTime? initTime;
 
     do {
       bytesAvailable = rawSocket.available();
 
-      // Wait Data:
+      // No bytes yet, let's wait for it:
       if (bytesAvailable == 0) {
         var completer = readCompleter ??= Completer<bool>();
 
         await completer.future.timeout(
-          Duration(seconds: 1),
+          Duration(seconds: 5),
           onTimeout: () {
             if (!completer.isCompleted) {
               completer.complete(false);
@@ -295,31 +291,24 @@ class MultiDomainSecureServer {
         readCompleter = null;
       }
 
-      // Read data:
+      // Read data (ignore above timeout):
       var buffer = rawSocket.read(1024);
-
       if (buffer != null && buffer.isNotEmpty) {
         clientHello = clientHello.isNotEmpty
             ? Uint8List.fromList(clientHello + buffer)
             : buffer;
 
-        try {
-          var hostname = parseSNIHostname(clientHello);
-          if (hostname != null) {
-            return (
-              hostname: hostname,
-              clientHello: clientHello,
-              subscription: subscription
-            );
-          }
-        } catch (e, s) {
-          _log.severe(
-              "Error calling `parseSNIHostname`> clientHello: ${base64.encode(clientHello)}",
-              e,
-              s);
-          rethrow;
+        var hostname = parseSNIHostnameSafe(clientHello);
+        if (hostname != null) {
+          return (
+            hostname: hostname,
+            clientHello: clientHello,
+            subscription: subscription
+          );
         }
-      } else {}
+      }
+
+      initTime ??= DateTime.now();
     } while (!closed &&
         clientHello.length < 1024 * 16 &&
         DateTime.now().difference(initTime).inSeconds < 30);
@@ -331,6 +320,19 @@ class MultiDomainSecureServer {
     );
   }
 
+  /// Safely calls [parseSNIHostname], catching errors and logging them.
+  static String? parseSNIHostnameSafe(Uint8List clientHelloBuffer) {
+    try {
+      return parseSNIHostname(clientHelloBuffer);
+    } catch (e, s) {
+      _log.severe(
+          "Error calling `parseSNIHostname`> clientHello: ${base64.encode(clientHelloBuffer)}",
+          e,
+          s);
+      return null;
+    }
+  }
+
   /// Parses an SSL/TLS ClientHello message to extract the Server Name Indication (SNI) hostname.
   ///
   /// This function expects a valid ClientHello message buffer as input.
@@ -340,7 +342,7 @@ class MultiDomainSecureServer {
   ///
   /// [clientHelloBuffer]: The raw ClientHello message as a [Uint8List].
   static String? parseSNIHostname(Uint8List clientHelloBuffer) {
-    if (clientHelloBuffer.length < 38) return null;
+    if (clientHelloBuffer.length < 53) return null;
 
     var offset = 0;
 
@@ -371,7 +373,7 @@ class MultiDomainSecureServer {
     offset += sessionIDLength; // Skip Session ID bytes
 
     // Find SNI:
-    while (offset + 7 < clientHelloBuffer.length) {
+    while (offset + 9 < clientHelloBuffer.length) {
       // Extension Type (2 bytes):
       var b0 = clientHelloBuffer[offset];
       var b1 = clientHelloBuffer[offset + 1];
@@ -451,6 +453,20 @@ class MultiDomainSecureServer {
   /// socket (see its documentation). This method returns a
   /// `_HttpServerSecureMultiDomain`, which resolves this issue.*
   HttpServer asHttpServer() => _HttpServerSecureMultiDomain(this);
+
+  bool _closed = false;
+
+  bool get isClosed => _closed;
+
+  Future<void> close() async {
+    if (_closed) return;
+    _closed = true;
+
+    await _acceptSubscription.cancel();
+    await _rawServerSocket.close();
+
+    _onAcceptController.close();
+  }
 
   @override
   String toString() =>
