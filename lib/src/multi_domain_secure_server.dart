@@ -424,7 +424,219 @@ class MultiDomainSecureServer {
     return regexpDomainName.hasMatch(hostname);
   }
 
+  /// Attaches an [HttpServer] to this [MultiDomainSecureServer]
+  /// using [asServerSocket](useSecureSocket: true).
+  ///
+  /// *NOTE: Do not use [HttpServer.listenOn], since it won't close the server
+  /// socket (see its documentation).*
+  HttpServer asHttpServer() => _HttpServerSecureMultiDomain(this);
+
   @override
   String toString() =>
       'MultiDomainSecureServer{address: ${_rawServerSocket.address}, port: ${_rawServerSocket.port}}';
+}
+
+/// Ensures that [HttpServer] will close [_multiDomainSecureServer].
+class _HttpServerSecureMultiDomain implements HttpServer {
+  final MultiDomainSecureServer _multiDomainSecureServer;
+  final HttpServer _server;
+
+  _HttpServerSecureMultiDomain._(this._multiDomainSecureServer, this._server);
+
+  factory _HttpServerSecureMultiDomain(
+      MultiDomainSecureServer multiDomainSecureServer) {
+    var server = HttpServer.listenOn(
+        multiDomainSecureServer.asServerSocket(useSecureSocket: true));
+    return _HttpServerSecureMultiDomain._(multiDomainSecureServer, server);
+  }
+
+  @override
+  bool get autoCompress => _server.autoCompress;
+
+  @override
+  set autoCompress(bool value) => _server.autoCompress = value;
+
+  @override
+  Duration? get idleTimeout => _server.idleTimeout;
+
+  @override
+  set idleTimeout(Duration? value) => _server.idleTimeout = value;
+
+  @override
+  String? get serverHeader => _server.serverHeader;
+
+  @override
+  set serverHeader(String? value) => _server.serverHeader = value;
+
+  @override
+  InternetAddress get address => _server.address;
+
+  @override
+  Future<bool> any(bool Function(HttpRequest element) test) =>
+      _server.any(test);
+
+  @override
+  Stream<HttpRequest> asBroadcastStream({
+    void Function(StreamSubscription<HttpRequest> subscription)? onListen,
+    void Function(StreamSubscription<HttpRequest> subscription)? onCancel,
+  }) =>
+      _server.asBroadcastStream(onListen: onListen, onCancel: onCancel);
+
+  @override
+  Stream<E> asyncExpand<E>(Stream<E>? Function(HttpRequest event) convert) =>
+      _server.asyncExpand(convert);
+
+  @override
+  Stream<E> asyncMap<E>(FutureOr<E> Function(HttpRequest event) convert) =>
+      _server.asyncMap(convert);
+
+  @override
+  Stream<R> cast<R>() => _server.cast<R>();
+
+  @override
+  Future close({bool force = false}) async {
+    await _server.close(force: force);
+    await _multiDomainSecureServer._rawServerSocket.close();
+  }
+
+  @override
+  HttpConnectionsInfo connectionsInfo() => _server.connectionsInfo();
+
+  @override
+  Future<bool> contains(Object? needle) => _server.contains(needle);
+
+  @override
+  HttpHeaders get defaultResponseHeaders => _server.defaultResponseHeaders;
+
+  @override
+  Stream<HttpRequest> distinct(
+          [bool Function(HttpRequest previous, HttpRequest next)? equals]) =>
+      _server.distinct(equals);
+
+  @override
+  Future<E> drain<E>([E? futureValue]) => _server.drain(futureValue);
+
+  @override
+  Future<HttpRequest> elementAt(int index) => _server.elementAt(index);
+
+  @override
+  Future<bool> every(bool Function(HttpRequest element) test) =>
+      _server.every(test);
+
+  @override
+  Stream<S> expand<S>(Iterable<S> Function(HttpRequest element) convert) =>
+      _server.expand(convert);
+
+  @override
+  Future<HttpRequest> get first => _server.first;
+
+  @override
+  Future<HttpRequest> firstWhere(bool Function(HttpRequest element) test,
+          {HttpRequest Function()? orElse}) =>
+      _server.firstWhere(test, orElse: orElse);
+
+  @override
+  Future<S> fold<S>(S initialValue,
+          S Function(S previous, HttpRequest element) combine) =>
+      _server.fold(initialValue, combine);
+
+  @override
+  Future<void> forEach(void Function(HttpRequest element) action) =>
+      _server.forEach(action);
+
+  @override
+  Stream<HttpRequest> handleError(Function onError,
+          {bool Function(dynamic error)? test}) =>
+      _server.handleError(onError, test: test);
+
+  @override
+  bool get isBroadcast => _server.isBroadcast;
+
+  @override
+  Future<bool> get isEmpty => _server.isEmpty;
+
+  @override
+  Future<String> join([String separator = ""]) => _server.join(separator);
+
+  @override
+  Future<HttpRequest> get last => _server.last;
+
+  @override
+  Future<HttpRequest> lastWhere(bool Function(HttpRequest element) test,
+          {HttpRequest Function()? orElse}) =>
+      _server.lastWhere(test, orElse: orElse);
+
+  @override
+  Future<int> get length => _server.length;
+
+  @override
+  StreamSubscription<HttpRequest> listen(
+      void Function(HttpRequest event)? onData,
+      {Function? onError,
+      void Function()? onDone,
+      bool? cancelOnError}) {
+    return _server.listen(onData,
+        onError: onError, onDone: onDone, cancelOnError: cancelOnError);
+  }
+
+  @override
+  Stream<S> map<S>(S Function(HttpRequest event) convert) =>
+      _server.map(convert);
+
+  @override
+  Future pipe(StreamConsumer<HttpRequest> streamConsumer) =>
+      _server.pipe(streamConsumer);
+
+  @override
+  int get port => _server.port;
+
+  @override
+  Future<HttpRequest> reduce(
+          HttpRequest Function(HttpRequest previous, HttpRequest element)
+              combine) =>
+      _server.reduce(combine);
+
+  @override
+  set sessionTimeout(int timeout) => _server.sessionTimeout = timeout;
+
+  @override
+  Future<HttpRequest> get single => _server.single;
+
+  @override
+  Future<HttpRequest> singleWhere(bool Function(HttpRequest element) test,
+          {HttpRequest Function()? orElse}) =>
+      _server.singleWhere(test, orElse: orElse);
+
+  @override
+  Stream<HttpRequest> skip(int count) => _server.skip(count);
+
+  @override
+  Stream<HttpRequest> skipWhile(bool Function(HttpRequest element) test) =>
+      _server.skipWhile(test);
+
+  @override
+  Stream<HttpRequest> take(int count) => _server.take(count);
+
+  @override
+  Stream<HttpRequest> takeWhile(bool Function(HttpRequest element) test) =>
+      _server.takeWhile(test);
+
+  @override
+  Stream<HttpRequest> timeout(Duration timeLimit,
+          {void Function(EventSink<HttpRequest> sink)? onTimeout}) =>
+      _server.timeout(timeLimit, onTimeout: onTimeout);
+
+  @override
+  Future<List<HttpRequest>> toList() => _server.toList();
+
+  @override
+  Future<Set<HttpRequest>> toSet() => _server.toSet();
+
+  @override
+  Stream<S> transform<S>(StreamTransformer<HttpRequest, S> streamTransformer) =>
+      _server.transform(streamTransformer);
+
+  @override
+  Stream<HttpRequest> where(bool Function(HttpRequest event) test) =>
+      _server.where(test);
 }
