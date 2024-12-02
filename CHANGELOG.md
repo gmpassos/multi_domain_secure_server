@@ -1,3 +1,8 @@
+## 1.0.8
+
+- `MultiDomainSecureServer`:
+  - `extractSNIHostname`: optimize using `available` and reducing calls to `read`.
+
 ## 1.0.7
 
 - `MultiDomainSecureServer`:
