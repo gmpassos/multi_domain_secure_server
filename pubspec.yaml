@@ -6,6 +6,11 @@ repository: https://github.com/gmpassos/multi_domain_secure_server
 environment:
   sdk: ^3.5.0
 
+false_secrets:
+  ## Contains a `localhost` private key for
+  ## benchmark of HTTPS connections:
+  - benchmark/shelf_benchmark.dart
+
 dependencies:
   logging: ^1.3.0
   dependency_validator: ^4.1.1
