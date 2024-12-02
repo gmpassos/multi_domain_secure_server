@@ -49,6 +49,10 @@ class RawSocketAsSocket extends Stream<Uint8List> implements Socket {
             {
               _flushWriteQueue();
             }
+          case RawSocketEvent.closed:
+            {
+              close();
+            }
           default:
             break;
         }
@@ -97,6 +101,8 @@ class RawSocketAsSocket extends Stream<Uint8List> implements Socket {
   }
 
   void _writeImpl(List<int> bs, [int offset = 0, int? length]) {
+    if (_closed) return;
+
     length ??= bs.length;
 
     _flushWriteQueue();
@@ -119,7 +125,7 @@ class RawSocketAsSocket extends Stream<Uint8List> implements Socket {
   int _flushWriteQueue() {
     var wTotal = 0;
 
-    while (_writeQueue.isNotEmpty) {
+    while (_writeQueue.isNotEmpty && !_closed) {
       var e = _writeQueue.first;
 
       var bs = e.$1;
@@ -156,6 +162,8 @@ class RawSocketAsSocket extends Stream<Uint8List> implements Socket {
   Future<bool>? _scheduleFlushWriteQueueFuture;
 
   void _scheduleFlushWriteQueue({bool slow = false, bool fast = false}) {
+    if (_closed) return;
+
     var future = _scheduleFlushWriteQueueFuture;
     if (future != null) return;
 
@@ -221,7 +229,7 @@ class RawSocketAsSocket extends Stream<Uint8List> implements Socket {
 
         var separatorBs = encoding.encode(separator);
 
-        while (itr.moveNext()) {
+        while (itr.moveNext() && !_closed) {
           var o = itr.current;
           _writeImpl(separatorBs);
           var bs = encoding.encode(o.toString());
@@ -291,7 +299,7 @@ class RawSocketAsSocket extends Stream<Uint8List> implements Socket {
   }
 
   Future<void> flushImpl() async {
-    while (_writeQueue.isNotEmpty) {
+    while (_writeQueue.isNotEmpty && !_closed) {
       var w = _flushWriteQueue();
 
       if (w == 0) {
@@ -304,19 +312,44 @@ class RawSocketAsSocket extends Stream<Uint8List> implements Socket {
     }
   }
 
+  bool _closed = false;
+
+  void _closeImpl() {
+    _closed = true;
+
+    var completers = [_writeCompleter, _writeQueueComplete].nonNulls;
+
+    _writeCompleter = null;
+    _writeQueueComplete = null;
+
+    for (var c in completers) {
+      if (!c.isCompleted) {
+        c.complete(false);
+      }
+    }
+
+    _streamController.close();
+  }
+
   @override
   Future<void> close() async {
+    if (_closed) return;
+
     _flushWriteQueue();
     _writeQueue.clear();
     await _rawSocket.close();
+    _closeImpl();
   }
 
   @override
   void destroy() {
+    if (_closed) return;
+
     _flushWriteQueue();
     _writeQueue.clear();
     _rawSocket.shutdown(SocketDirection.both);
     _rawSocket.close();
+    _closeImpl();
   }
 }
 
@@ -355,11 +388,14 @@ class RawSecureSocketAsSecureSocket extends RawSocketAsSocket
 class RawServerSocketAsServerSocket extends Stream<Socket>
     implements ServerSocket {
   final RawServerSocket _rawServerSocket;
+  final StreamSubscription<RawSocket>? _acceptSubscription;
   final StreamController<Socket> _streamController;
 
   RawServerSocketAsServerSocket(this._rawServerSocket,
-      {StreamController<Socket>? streamController})
-      : _streamController = _resolveStream(_rawServerSocket, streamController);
+      {StreamSubscription<RawSocket>? acceptSubscription,
+      StreamController<Socket>? streamController})
+      : _acceptSubscription = acceptSubscription,
+        _streamController = _resolveStream(_rawServerSocket, streamController);
 
   static StreamController<Socket> _resolveStream(
       RawServerSocket rawServerSocket,
@@ -390,6 +426,8 @@ class RawServerSocketAsServerSocket extends Stream<Socket>
   @override
   Future<ServerSocket> close() async {
     await _rawServerSocket.close();
+    _streamController.close();
+    _acceptSubscription?.cancel();
     return this;
   }
 }
@@ -403,11 +441,14 @@ class RawServerSocketAsServerSocket extends Stream<Socket>
 class RawServerSocketAsSecureServerSocket extends Stream<SecureSocket>
     implements SecureServerSocket {
   final RawServerSocket _rawServerSocket;
+  final StreamSubscription<RawSocket>? _acceptSubscription;
   final StreamController<SecureSocket> _streamController;
 
   RawServerSocketAsSecureServerSocket(this._rawServerSocket,
-      {required StreamController<SecureSocket> streamController})
-      : _streamController = streamController;
+      {StreamSubscription<RawSocket>? acceptSubscription,
+      required StreamController<SecureSocket> streamController})
+      : _acceptSubscription = acceptSubscription,
+        _streamController = streamController;
 
   @override
   InternetAddress get address => _rawServerSocket.address;
@@ -427,6 +468,8 @@ class RawServerSocketAsSecureServerSocket extends Stream<SecureSocket>
   @override
   Future<SecureServerSocket> close() async {
     await _rawServerSocket.close();
+    _streamController.close();
+    _acceptSubscription?.cancel();
     return this;
   }
 }
@@ -440,11 +483,14 @@ class RawServerSocketAsSecureServerSocket extends Stream<SecureSocket>
 class RawSecureServerSocketAsSecureServerSocket extends Stream<SecureSocket>
     implements SecureServerSocket {
   final RawSecureServerSocket _rawSecureServerSocket;
+  final StreamSubscription<RawSecureSocket>? _acceptSubscription;
   final StreamController<SecureSocket> _streamController;
 
   RawSecureServerSocketAsSecureServerSocket(this._rawSecureServerSocket,
-      {StreamController<SecureSocket>? streamController})
-      : _streamController =
+      {StreamSubscription<RawSecureSocket>? acceptSubscription,
+      StreamController<SecureSocket>? streamController})
+      : _acceptSubscription = acceptSubscription,
+        _streamController =
             _resolveStream(_rawSecureServerSocket, streamController);
 
   static StreamController<SecureSocket> _resolveStream(
@@ -479,6 +525,8 @@ class RawSecureServerSocketAsSecureServerSocket extends Stream<SecureSocket>
   @override
   Future<SecureServerSocket> close() async {
     await _rawSecureServerSocket.close();
+    _streamController.close();
+    _acceptSubscription?.cancel();
     return this;
   }
 }
