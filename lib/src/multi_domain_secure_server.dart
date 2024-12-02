@@ -113,7 +113,6 @@ class MultiDomainSecureServer {
     }
 
     var securityContext = resolveSecureContext(sniHostname.hostname);
-
     if (securityContext == null) {
       sniHostname.subscription?.cancel();
       rawSocket.close();
@@ -201,6 +200,8 @@ class MultiDomainSecureServer {
         streamController: streamController);
   }
 
+  static final Uint8List _emptyBytes = Uint8List(0);
+
   /// Extracts the SNI hostname from a TLS `ClientHello` message.
   ///
   /// Reads data from the provided [RawSocket] in chunks, extracting the SNI hostname
@@ -219,38 +220,88 @@ class MultiDomainSecureServer {
         String? hostname,
         StreamSubscription<RawSocketEvent>? subscription
       })> extractSNIHostname(RawSocket rawSocket) async {
-    var clientHello = rawSocket.read(1024 * 4) ?? Uint8List(0);
+    var clientHello = _emptyBytes;
 
-    try {
-      var hostname = parseSNIHostname(clientHello);
-      if (hostname != null) {
-        return (
-          hostname: hostname,
-          clientHello: clientHello,
-          subscription: null
-        );
+    var bytesAvailable = rawSocket.available();
+    if (bytesAvailable > 0) {
+      clientHello = rawSocket.read(1024) ?? _emptyBytes;
+
+      try {
+        var hostname = parseSNIHostname(clientHello);
+        if (hostname != null) {
+          return (
+            hostname: hostname,
+            clientHello: clientHello,
+            subscription: null
+          );
+        }
+      } catch (e, s) {
+        _log.severe(
+            "Error calling `parseSNIHostname`> clientHello: ${base64.encode(clientHello)}",
+            e,
+            s);
+        rethrow;
       }
-    } catch (e, s) {
-      _log.severe(
-          "Error calling `parseSNIHostname`> clientHello: ${base64.encode(clientHello)}",
-          e,
-          s);
-      rethrow;
     }
 
     // With retry and timeout:
 
     final initTime = DateTime.now();
+
     var closed = false;
     StreamSubscription<RawSocketEvent>? subscription;
-    Completer<bool>? readCompleter;
+    Completer<bool>? readCompleter = Completer<bool>();
 
-    while (!closed &&
-        clientHello.length < 1024 * 16 &&
-        DateTime.now().difference(initTime).inSeconds < 30) {
-      var buffer = rawSocket.read(1024 * 4);
+    {
+      rawSocket.readEventsEnabled = true;
+
+      subscription = rawSocket.listen((event) {
+        switch (event) {
+          case RawSocketEvent.read:
+            {
+              readCompleter?.complete(true);
+              readCompleter = null;
+            }
+          case RawSocketEvent.readClosed:
+          case RawSocketEvent.closed:
+            {
+              closed = true;
+              readCompleter?.complete(true);
+              readCompleter = null;
+            }
+          default:
+            break;
+        }
+      });
+    }
+
+    do {
+      bytesAvailable = rawSocket.available();
+
+      // Wait Data:
+      if (bytesAvailable == 0) {
+        var completer = readCompleter ??= Completer<bool>();
+
+        await completer.future.timeout(
+          Duration(seconds: 1),
+          onTimeout: () {
+            if (!completer.isCompleted) {
+              completer.complete(false);
+            }
+            return false;
+          },
+        );
+
+        readCompleter = null;
+      }
+
+      // Read data:
+      var buffer = rawSocket.read(1024);
+
       if (buffer != null && buffer.isNotEmpty) {
-        clientHello = Uint8List.fromList(clientHello + buffer);
+        clientHello = clientHello.isNotEmpty
+            ? Uint8List.fromList(clientHello + buffer)
+            : buffer;
 
         try {
           var hostname = parseSNIHostname(clientHello);
@@ -268,46 +319,10 @@ class MultiDomainSecureServer {
               s);
           rethrow;
         }
-      } else {
-        assert(readCompleter == null);
-        var completer = readCompleter = Completer<bool>();
-
-        if (subscription == null) {
-          rawSocket.readEventsEnabled = true;
-
-          subscription = rawSocket.listen((event) {
-            switch (event) {
-              case RawSocketEvent.read:
-                {
-                  readCompleter?.complete(true);
-                  readCompleter = null;
-                }
-              case RawSocketEvent.readClosed:
-              case RawSocketEvent.closed:
-                {
-                  closed = true;
-                  readCompleter?.complete(true);
-                  readCompleter = null;
-                }
-              default:
-                break;
-            }
-          });
-        }
-
-        await completer.future.timeout(
-          Duration(seconds: 1),
-          onTimeout: () {
-            if (!completer.isCompleted) {
-              completer.complete(false);
-            }
-            return false;
-          },
-        );
-
-        readCompleter = null;
-      }
-    }
+      } else {}
+    } while (!closed &&
+        clientHello.length < 1024 * 16 &&
+        DateTime.now().difference(initTime).inSeconds < 30);
 
     return (
       hostname: null,
