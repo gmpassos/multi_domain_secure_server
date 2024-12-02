@@ -33,13 +33,15 @@ class MultiDomainSecureServer {
   /// If true, only handshakes with a ClientHello message containing a hostname are accepted.
   final bool requiresHandshakesWithHostname;
 
+  late final StreamSubscription<RawSocket> _acceptSubscription;
+
   MultiDomainSecureServer._(
       this._rawServerSocket,
       this._supportedProtocols,
       this._defaultSecureContext,
       this.securityContextResolver,
       this.requiresHandshakesWithHostname) {
-    _rawServerSocket.listen(_accept);
+    _acceptSubscription = _rawServerSocket.listen(_accept);
   }
 
   /// The wrapped [RawServerSocket].
@@ -181,7 +183,9 @@ class MultiDomainSecureServer {
       });
     }
 
-    return _rawServerSocket.asServerSocket(streamController: streamController);
+    return _rawServerSocket.asServerSocket(
+        acceptSubscription: _acceptSubscription,
+        streamController: streamController);
   }
 
   /// Converts this to a [RawServerSocketAsSecureServerSocket], which implements [SecureServerSocket].
@@ -193,6 +197,7 @@ class MultiDomainSecureServer {
     });
 
     return _rawServerSocket.asSecureServerSocket(
+        acceptSubscription: _acceptSubscription,
         streamController: streamController);
   }
 
