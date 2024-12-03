@@ -1,8 +1,7 @@
 ## 1.0.10
 
 - Tools:
-
-- New `HostResolver`, `SocketConnector` and `HttpConnectorWithCachedAddresses`.
+  - New `HostResolver`, `SocketConnector` and `HttpConnectorWithCachedAddresses`.
 
 - New library: `multi_domain_secure_server_tools.dart`
 
