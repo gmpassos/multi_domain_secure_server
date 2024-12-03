@@ -1,10 +1,10 @@
+import 'dart:async';
 import 'dart:io';
 
 /// A utility class to resolve and cache host addresses.
 ///
 /// Provides caching of DNS lookups for improved performance and reduces redundant lookups.
 class HostResolver {
-
   HostResolver();
 
   /// A cache for resolved host addresses.
@@ -34,19 +34,25 @@ class HostResolver {
     return false;
   }
 
-  /// Resolves the IP addresses for the given [host], using cache if available.
+  /// Resolves the IP addresses for the given [hostname], using cache if available.
   ///
-  /// - [host]: The hostname to resolve.
+  /// - [hostname]: The hostname to resolve.
   /// - Returns a list of resolved [InternetAddress] objects.
-  Future<List<InternetAddress>> lookupAddress(String host) async =>
-      _addressesCache[host] ??= await lookupAddressImpl(host);
+  FutureOr<List<InternetAddress>> lookupAddress(String hostname) {
+    var cached = _addressesCache[hostname];
+    if (cached != null) return cached;
 
-  /// Performs the actual DNS lookup for the given [host].
+    return lookupAddressImpl(hostname).then((address) {
+      return _addressesCache[hostname] ??= address;
+    });
+  }
+
+  /// Performs the actual DNS lookup for the given [hostname].
   ///
-  /// - [host]: The hostname to resolve.
+  /// - [hostname]: The hostname to resolve.
   /// - Returns a list of resolved [InternetAddress] objects.
-  Future<List<InternetAddress>> lookupAddressImpl(String host) =>
-      InternetAddress.lookup(host, type: InternetAddressType.any);
+  Future<List<InternetAddress>> lookupAddressImpl(String hostname) =>
+      InternetAddress.lookup(hostname, type: InternetAddressType.any);
 }
 
 /// A class for managing socket connections with address caching.
