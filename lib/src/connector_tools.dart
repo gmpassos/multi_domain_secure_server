@@ -86,7 +86,7 @@ class SocketConnector extends HostResolver {
       for (var i = 0; i < addresses.length; ++i) {
         var address = addresses[i];
         try {
-          var socket = await connectSecureSocket(host, port, context);
+          var socket = await connectSecureSocket(address, port, context);
           if (i > 0) {
             addresses.removeAt(i);
             addresses.insert(0, address);
@@ -101,7 +101,7 @@ class SocketConnector extends HostResolver {
       for (var i = 0; i < addresses.length; ++i) {
         var address = addresses[i];
         try {
-          var socket = await connectSocket(host, port);
+          var socket = await connectSocket(address, port);
           if (i > 0) {
             addresses.removeAt(i);
             addresses.insert(0, address);
@@ -117,20 +117,20 @@ class SocketConnector extends HostResolver {
     throw error ?? StateError("Can't connect a socket to> $host:$port");
   }
 
-  /// Connects to a non-secure socket at the specified [host] and [port].
+  /// Connects to a non-secure socket at the specified [address] and [port].
   ///
   /// Returns a [Future] that completes with the connected [Socket].
-  Future<Socket> connectSocket(String host, int port) =>
-      Socket.connect(host, port);
+  Future<Socket> connectSocket(InternetAddress address, int port) =>
+      Socket.connect(address, port);
 
-  /// Connects to a secure socket at the specified [host] and [port].
+  /// Connects to a secure socket at the specified [address] and [port].
   ///
   /// Optionally accepts a [SecurityContext] and a bad certificate callback.
   ///
   /// Returns a [Future] that completes with the connected [SecureSocket].
   Future<SecureSocket> connectSecureSocket(
-          String host, int port, SecurityContext? context) =>
-      SecureSocket.connect(host, port,
+          InternetAddress address, int port, SecurityContext? context) =>
+      SecureSocket.connect(address, port,
           context: context, onBadCertificate: onBadCertificate);
 }
 
