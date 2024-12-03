@@ -1,3 +1,15 @@
+## 1.0.10
+
+- Tools:
+
+- New `HostResolver`, `SocketConnector` and `HttpConnectorWithCachedAddresses`.
+
+- New library: `multi_domain_secure_server_tools.dart`
+
+- Improved `shelf_benchmark.dart`: using `HttpConnectorWithCachedAddresses`.
+
+- async_benchmark: ^1.0.2
+
 ## 1.0.9
 
 - `MultiDomainSecureServer`:
