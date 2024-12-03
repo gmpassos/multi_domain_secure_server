@@ -5,13 +5,28 @@ import 'dart:isolate';
 
 import 'package:async_benchmark/async_benchmark.dart';
 import 'package:multi_domain_secure_server/multi_domain_secure_server.dart';
+import 'package:multi_domain_secure_server/multi_domain_secure_server_tools.dart';
+import 'package:multi_domain_secure_server/src/connector_tools.dart';
 import 'package:shelf/shelf.dart';
 import 'package:shelf/shelf_io.dart' as shelf_io;
 
 import '../test/localhost_cert.dart';
 
+const profileNormal2000 = BenchmarkProfile(
+  'normal:2000',
+  warmup: 100,
+  interactions: 2000,
+  rounds: 3,
+);
+
 void main() async {
-  final profile = BenchmarkProfile.normal;
+  // Avoid `localhost` lookup, since we don't want to measure that:
+  HttpConnectorWithCachedAddresses(onBadCertificate: (cert) => true).register();
+
+  // final profile = BenchmarkProfile.fast;
+
+  // Use custom profile:
+  final profile = profileNormal2000;
 
   final textLength = 1024;
   print('textLength: $textLength');
@@ -67,24 +82,48 @@ abstract class ShelfBenchmark extends Benchmark<JobSetup, HttpServer> {
   @override
   Future<BenchmarkSetupResult<JobSetup, HttpServer>> setup();
 
+  final List<HttpClient> _httpClients = [];
+
   @override
   Future<void> job(JobSetup setup, HttpServer? service) async {
-    var httpClient = HttpClient();
+    var httpClient = HttpClient()
+      ..badCertificateCallback = _badCertificateCallback;
 
-    httpClient.badCertificateCallback = _badCertificateCallback;
+    // List of clients to close on [teardown]:
+    _httpClients.add(httpClient);
 
-    var request = await httpClient.getUrl(setup.requestUri);
-    var response = await request.close();
-    final responseText = await response.transform(utf8.decoder).join();
-    if (responseText != setup.serverText) {
-      throw StateError(
-          "Invalid response text:\n<<$responseText>>\n!=\n<<${setup.serverText}>>");
+    try {
+      var request = await httpClient.getUrl(setup.requestUri);
+      var response = await request.close();
+
+      final responseText = await response.transform(utf8.decoder).join();
+      if (responseText != setup.serverText) {
+        throw StateError(
+            "Invalid response text:\n<<$responseText>>\n!=\n<<${setup.serverText}>>");
+      }
+    } catch (e) {
+      print("** Error requestiong: ${setup.requestUri}");
+      print(e);
+
+      // Abort benchmark:
+      exit(100);
     }
   }
 
   bool _badCertificateCallback(cert, host, port) {
     //print('badCertificateCallback[$host:$port]> $cert');
     return true;
+  }
+
+  @override
+  void teardown(JobSetup setup, HttpServer? service) {
+    print('-- Closing `HttpClient`s: ${_httpClients.length}');
+
+    for (var httpClient in _httpClients) {
+      httpClient.close();
+    }
+
+    _httpClients.clear();
   }
 
   @override
@@ -128,8 +167,11 @@ Future<(HttpServer, String)> createServer(
 
   final handler = createHandler(responseText);
 
-  var server = await shelf_io.serve(handler,
-      ipv6 ? InternetAddress.loopbackIPv6 : InternetAddress.loopbackIPv4, port);
+  var address =
+      ipv6 ? InternetAddress.loopbackIPv6 : InternetAddress.loopbackIPv4;
+
+  var server = await shelf_io.serve(handler, address, port);
+
   return (server, responseText);
 }
 
