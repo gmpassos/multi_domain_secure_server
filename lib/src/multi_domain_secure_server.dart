@@ -537,7 +537,7 @@ class _HttpServerSecureMultiDomain implements HttpServer {
   @override
   Future close({bool force = false}) async {
     await _server.close(force: force);
-    await _multiDomainSecureServer._rawServerSocket.close();
+    await _multiDomainSecureServer.close();
   }
 
   @override

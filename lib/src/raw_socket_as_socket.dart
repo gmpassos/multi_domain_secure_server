@@ -47,7 +47,12 @@ class RawSocketAsSocket extends Stream<Uint8List> implements Socket {
             }
           case RawSocketEvent.readClosed:
             {
-              _flushWriteQueue();
+              var w = _flushWriteQueue();
+              if (w > 0) {
+                Future.delayed(Duration(milliseconds: 2), () => close());
+              } else {
+                close();
+              }
             }
           case RawSocketEvent.closed:
             {

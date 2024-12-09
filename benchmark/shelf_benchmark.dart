@@ -19,6 +19,10 @@ const profileNormal2000 = BenchmarkProfile(
   rounds: 3,
 );
 
+/// It's recommended to run this benchmark using `ulimit -n`:
+/// ```bash
+/// ulimit -n 65536 && dart run benchmark/shelf_benchmark.dart
+/// ```
 void main() async {
   // Avoid `localhost` lookup, since we don't want to measure that:
   HttpConnectorWithCachedAddresses(onBadCertificate: (cert) => true).register();
@@ -26,10 +30,29 @@ void main() async {
   // final profile = BenchmarkProfile.fast;
 
   // Use custom profile:
-  final profile = profileNormal2000;
+  var profile = profileNormal2000;
+
+  var ulimit = await getUlimitValue();
+  print('»» ulimit: $ulimit');
+
+  // The number of connections needed for each benchmark
+  // (one for the client and another for the server):
+  print('»» neededConnections: ${profile.neededConnections}');
+
+  // A security margin to compute `ulimit`.
+  var ulimitMargin = 1000;
+
+  if (ulimit != null && profile.neededConnections > ulimit - ulimitMargin) {
+    var maxInteractions = (ulimit - (ulimitMargin + (profile.warmup * 2))) ~/ 2;
+    print('»» Changing interactions to: $maxInteractions (ulimit: $ulimit)');
+    print('»» New neededConnections: ${profile.neededConnections}');
+    profile = profile.copyWith(interactions: maxInteractions);
+  }
+
+  print('»» profile: $profile');
 
   final textLength = 1024;
-  print('textLength: $textLength');
+  print('»» textLength: $textLength');
 
   var benchmarks = [
     ShelfBenchmarkHTTP(textLength: textLength, ipv6: false),
@@ -117,7 +140,7 @@ abstract class ShelfBenchmark extends Benchmark<JobSetup, HttpServer> {
 
   @override
   void teardown(JobSetup setup, HttpServer? service) {
-    print('-- Closing `HttpClient`s: ${_httpClients.length}');
+    print('║ »» Closing `HttpClient`s: ${_httpClients.length}');
 
     for (var httpClient in _httpClients) {
       httpClient.close();
@@ -130,7 +153,7 @@ abstract class ShelfBenchmark extends Benchmark<JobSetup, HttpServer> {
   Future<void> shutdown(JobSetup setup, HttpServer? server) async {
     if (server != null) {
       print(
-          '${Isolate.current.debugName} -- Closing `HttpServer`: ${server.address}:${server.port}');
+          '║ »» ${Isolate.current.debugName} -- Closing `HttpServer`: ${server.address}:${server.port}');
       await server.close(force: true);
     }
   }
@@ -210,7 +233,7 @@ Handler createHandler(String responseText) {
 }
 
 Response handleRequest(Request request, String responseText) {
-  //print('» ${request.requestedUri}');
+  //print('»» ${request.requestedUri}');
   return Response.ok(responseText, headers: {'Content-Type': 'text/plain'});
 }
 
@@ -218,4 +241,23 @@ String generateText(int length) {
   const String chars =
       "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 ";
   return List.generate(length, (i) => chars[i % chars.length]).join();
+}
+
+extension on BenchmarkProfile {
+  int get neededConnections => (warmup + interactions) * 2;
+}
+
+Future<int?> getUlimitValue() async {
+  try {
+    final result = await Process.run('bash', ['-c', 'ulimit -n']);
+    if (result.exitCode == 0) {
+      return int.tryParse(result.stdout.trim());
+    } else {
+      stderr.write('Error getting `ulimit -n` value: ${result.stderr}');
+      return null;
+    }
+  } catch (e) {
+    print('Error getting `ulimit -n` value: $e');
+    return null;
+  }
 }

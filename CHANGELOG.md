@@ -1,3 +1,13 @@
+## 1.0.12
+
+- `HttpServerSecureMultiDomain`:
+  - `close`: improve `_multiDomainSecureServer.close`.
+
+- `RawSocketAsSocket`:
+  - `RawSocketEvent.readClosed`: call `close` to fully close the socket.
+
+- async_benchmark: ^1.0.3
+
 ## 1.0.11
 
 - test: ^1.25.12
