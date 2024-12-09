@@ -40,7 +40,7 @@ void main() async {
   print('»» neededConnections: ${profile.neededConnections}');
 
   // A security margin to compute `ulimit`.
-  var ulimitMargin = 1000;
+  var ulimitMargin = 100;
 
   if (ulimit != null && profile.neededConnections > ulimit - ulimitMargin) {
     var maxInteractions = (ulimit - (ulimitMargin + (profile.warmup * 2))) ~/ 2;
