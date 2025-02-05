@@ -31,11 +31,11 @@ class MultiDomainSecureServer {
   final SecurityContextResolver? securityContextResolver;
 
   /// If true, only handshakes with a ClientHello message containing a
-  /// hostname are accepted. Default: false
+  /// hostname are accepted.
   final bool requiresHandshakesWithHostname;
 
   /// If true, validates whether the hostname in the TLS ClientHello message
-  /// follows a valid public domain format. Default: false
+  /// follows a valid public domain format.
   final bool validatePublicDomainFormat;
 
   late final StreamSubscription<RawSocket> _acceptSubscription;
@@ -74,8 +74,8 @@ class MultiDomainSecureServer {
   /// - [supportedProtocols]: Optional list of supported security protocols.
   /// - [defaultSecureContext]: Optional default security context for connections.
   /// - [securityContextResolver]: Optional custom resolver for selecting security contexts.
-  /// - [requiresHandshakesWithHostname]: If true, only handshakes with a hostname in the ClientHello are accepted.
-  /// - [validatePublicDomainFormat]: If true, validates whether the hostname is a valid public domain.
+  /// - [requiresHandshakesWithHostname]: If true, only handshakes with a hostname in the ClientHello are accepted. Default: false
+  /// - [validatePublicDomainFormat]: If true, validates whether the hostname is a valid public domain. Default: false
   /// - [backlog]: The maximum number of pending connections in the queue. Defaults to 0, meaning the system default.
   /// - [v6Only]: If true, restricts the server to IPv6 connections only. Defaults to false.
   /// - [shared]: If true, allows multiple isolates to bind to the same address and port. Defaults to false.
