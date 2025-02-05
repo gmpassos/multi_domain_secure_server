@@ -1,3 +1,10 @@
+## 1.0.13
+
+- `MultiDomainSecureServer`:
+  - Added field `validatePublicDomainFormat`.
+  - `isValidHostname`: improve validation.
+  - Added `isValidPublicDomainName`.
+
 ## 1.0.12
 
 - `HttpServerSecureMultiDomain`:
