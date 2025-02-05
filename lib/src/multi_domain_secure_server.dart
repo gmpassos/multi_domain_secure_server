@@ -462,7 +462,7 @@ class MultiDomainSecureServer {
     return null;
   }
 
-  static final regexpNonPureNumericHostname = RegExp(r'[a-zA-Z]');
+  static final _regexpNonPureNumericHostname = RegExp(r'[a-zA-Z]');
 
   static final regexpHostName = RegExp(
     r'''
@@ -529,7 +529,7 @@ class MultiDomainSecureServer {
       return false;
     }
     return regexpHostName.hasMatch(hostname) &&
-        regexpNonPureNumericHostname.hasMatch(hostname);
+        _regexpNonPureNumericHostname.hasMatch(hostname);
   }
 
   static bool isValidPublicDomainName(String? hostname) {
@@ -537,7 +537,7 @@ class MultiDomainSecureServer {
       return false;
     }
     return regexpDomainName.hasMatch(hostname) &&
-        regexpNonPureNumericHostname.hasMatch(hostname);
+        _regexpNonPureNumericHostname.hasMatch(hostname);
   }
 
   /// Attaches an [HttpServer] to this [MultiDomainSecureServer]
