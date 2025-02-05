@@ -64,6 +64,7 @@ void main() {
         InternetAddress.anyIPv4,
         port,
         securityContextResolver: (host) {
+          print('securityContextResolver> $host');
           if (host == 'localhost') {
             hostsResolved.add(host);
             return localhostSecurityContext;
@@ -92,10 +93,14 @@ void main() {
       print('hostErrors: $hostsErrors');
       expect(hostsErrors, isEmpty);
 
+      expect(hostsResolved, isEmpty);
+
       var socket = await socketAsync;
       print('socket: $socket');
 
       expect(await acceptedSocket.future, isNotNull);
+
+      expect(hostsResolved, equals(['localhost']));
 
       var receivedBytes = await socket.first;
       expect(receivedBytes, equals(List.generate(10, (i) => i)));
@@ -106,34 +111,167 @@ void main() {
       await server.close();
     });
 
+    test('bind (localhost SecurityContext) [validatePublicDomainFormat: true]',
+        () async {
+      final port = 9445;
+
+      var hostsResolved = <String?>[];
+      var hostsErrors = <String?>[];
+
+      var localhostSecurityContext = loadLocalhostSecurityContext();
+
+      var server = await MultiDomainSecureServer.bind(
+        InternetAddress.anyIPv4,
+        port,
+        validatePublicDomainFormat: true,
+        securityContextResolver: (host) {
+          print('securityContextResolver> $host');
+          if (host == 'localhost') {
+            hostsResolved.add(host);
+            return localhostSecurityContext;
+          } else {
+            hostsErrors.add(host);
+            return null;
+          }
+        },
+      );
+
+      expect(server.rawServerSocket.port, equals(port));
+
+      var socketAsync = SecureSocket.connect(
+        'localhost',
+        port,
+        onBadCertificate: (_) => true,
+      ).then((socket) => true, onError: (e, s) => false);
+
+      print('hostErrors: $hostsErrors');
+      expect(hostsErrors, isEmpty);
+
+      expect(hostsResolved, isEmpty);
+
+      var socket = await socketAsync;
+      print('socket: $socket');
+
+      print('hostErrors: $hostsErrors');
+      expect(hostsErrors, equals([null]));
+
+      expect(hostsResolved, isEmpty);
+
+      print('Close server');
+      await server.close();
+    });
+
+    const validHostnames = <String>[
+      'a',
+      'b',
+      'localhost',
+      'foo-bar',
+      'my-server-123',
+      'server1',
+      'srv-01',
+      'a.x',
+      'validvalidvalidvalidvalidvalidvalidvalidvalidvalidvalidvalidva',
+    ];
+
+    const validDomains = [
+      'a.com',
+      'a.us',
+      'ab.us',
+      'a-b.us',
+      'example.com',
+      'example.com.br',
+      'a.example.com',
+      'sub.example.org',
+      'example.co.uk',
+      'ex-ample.com.br',
+      'www.example.com.br',
+      'www.sub1.example.com.br',
+      'www.sub1.sub2.example.com.br',
+      'xn--exmple-cua.com',
+      'validvalidvalidvalidvalidvalidvalidvalidvalidvalidvalidvalidval.com',
+      'validvalidvalidvalidvalidvalidvalidvalidvalidvalidvalidvalidval.validvalidvalidvalidvalidvalidvalidvalidvalidvalidvalidvalidval',
+      'foo.validvalidvalidvalidvalidvalidvalidvalidvalidvalidvalidvalidval',
+    ];
+
+    const validHostnamesInvalidDomains = [
+      'example.c',
+    ];
+
+    const invalidHostnames = [
+      '-localhost',
+      'localhost-',
+      '-localhost-',
+      '-example.com',
+      'example-.com',
+      'example..com',
+      '.example.com',
+      'example.com.',
+      'exa mple.com',
+      'example@com',
+      'exa_mple.com',
+      '1.2.3.4',
+      '192.168.0.1',
+      '192.168.0.101',
+      '192.168.100.101',
+      '192.168.100.10',
+      '10.10.10.1',
+      '10.10.10.10',
+      '10.10.10.100',
+      '10.10.10.100',
+      '10.10.1-0.100',
+      '10-10',
+      '123456',
+      'example..com',
+      '.com',
+      'example.123',
+      'example.123',
+      'toolongtoolongtooooooolongtooloooooooongtoolongtoolongtoooloooooongtooloooooong.com',
+      'validvalidvalidvalidvalidvalidvalidvalidvalidvalidvalidvalidvalx.com',
+      'validvalidvalidvalidvalidvalidvalidvalidvalidvalidvalidvalidval.validvalidvalidvalidvalidvalidvalidvalidvalidvalidvalidvalidvalx',
+      'foo.validvalidvalidvalidvalidvalidvalidvalidvalidvalidvalidvalidvalx',
+    ];
+
     test('isValidHostname', () {
-      // Valid intranet hostnames:
-      expect(MultiDomainSecureServer.isValidHostname('a'), isTrue);
-      expect(MultiDomainSecureServer.isValidHostname('localhost'), isTrue);
-      expect(MultiDomainSecureServer.isValidHostname('foo-bar'), isTrue);
-      expect(MultiDomainSecureServer.isValidHostname('my-server-123'), isTrue);
+      for (var hostname in [...validHostnames, ...validDomains]) {
+        expect(MultiDomainSecureServer.isValidHostname(hostname), isTrue,
+            reason: "Invalid hostname: $hostname");
+      }
 
-      // Valid general domains
-      expect(MultiDomainSecureServer.isValidHostname('a.x'), isTrue);
-      expect(MultiDomainSecureServer.isValidHostname('a.com'), isTrue);
-      expect(MultiDomainSecureServer.isValidHostname('example.com'), isTrue);
-      expect(MultiDomainSecureServer.isValidHostname('a.example.com'), isTrue);
-      expect(
-          MultiDomainSecureServer.isValidHostname('sub.example.org'), isTrue);
+      for (var hostname in validHostnamesInvalidDomains) {
+        expect(MultiDomainSecureServer.isValidHostname(hostname), isTrue,
+            reason: "Invalid hostname: $hostname");
+      }
 
-      // Invalid cases
-      expect(MultiDomainSecureServer.isValidHostname('-localhost'), isFalse);
-      expect(MultiDomainSecureServer.isValidHostname('localhost-'), isFalse);
-      expect(MultiDomainSecureServer.isValidHostname('-localhost-'), isFalse);
-      expect(MultiDomainSecureServer.isValidHostname('example..com'), isFalse);
-      expect(MultiDomainSecureServer.isValidHostname('.example.com'), isFalse);
-      expect(MultiDomainSecureServer.isValidHostname('example.com.'), isFalse);
-      expect(MultiDomainSecureServer.isValidHostname('exa mple.com'), isFalse);
-      expect(MultiDomainSecureServer.isValidHostname('example@com'), isFalse);
-      expect(
-          MultiDomainSecureServer.isValidHostname(
-              'toolongtoolongtooooooolongtooloooooooongtoolongtoolongtoooloooooongtooloooooong.com'),
-          isFalse);
+      for (var hostname in invalidHostnames) {
+        expect(MultiDomainSecureServer.isValidHostname(hostname), isFalse,
+            reason: "Valid hostname: $hostname");
+      }
+    });
+
+    test('isValidPublicDomainName', () {
+      for (var hostname in validHostnames) {
+        expect(
+            MultiDomainSecureServer.isValidPublicDomainName(hostname), isFalse,
+            reason: "Valid domain: $hostname");
+      }
+
+      for (var hostname in validDomains) {
+        expect(
+            MultiDomainSecureServer.isValidPublicDomainName(hostname), isTrue,
+            reason: "Invalid domain: $hostname");
+      }
+
+      for (var hostname in validHostnamesInvalidDomains) {
+        expect(
+            MultiDomainSecureServer.isValidPublicDomainName(hostname), isFalse,
+            reason: "Valid domain: $hostname");
+      }
+
+      for (var hostname in invalidHostnames) {
+        expect(
+            MultiDomainSecureServer.isValidPublicDomainName(hostname), isFalse,
+            reason: "Valid hostname: $hostname");
+      }
     });
 
     test('parseSNIHostname (partial)', () {
