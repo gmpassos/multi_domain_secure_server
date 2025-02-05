@@ -35,7 +35,7 @@ class MultiDomainSecureServer {
   final bool requiresHandshakesWithHostname;
 
   /// If true, validates whether the hostname in the TLS ClientHello message
-  /// follows a valid public domain format. Default: true
+  /// follows a valid public domain format. Default: false
   final bool validatePublicDomainFormat;
 
   late final StreamSubscription<RawSocket> _acceptSubscription;
@@ -75,6 +75,7 @@ class MultiDomainSecureServer {
   /// - [defaultSecureContext]: Optional default security context for connections.
   /// - [securityContextResolver]: Optional custom resolver for selecting security contexts.
   /// - [requiresHandshakesWithHostname]: If true, only handshakes with a hostname in the ClientHello are accepted.
+  /// - [validatePublicDomainFormat]: If true, validates whether the hostname is a valid public domain.
   /// - [backlog]: The maximum number of pending connections in the queue. Defaults to 0, meaning the system default.
   /// - [v6Only]: If true, restricts the server to IPv6 connections only. Defaults to false.
   /// - [shared]: If true, allows multiple isolates to bind to the same address and port. Defaults to false.
@@ -87,7 +88,7 @@ class MultiDomainSecureServer {
       SecurityContext? defaultSecureContext,
       SecurityContextResolver? securityContextResolver,
       bool requiresHandshakesWithHostname = false,
-      bool validatePublicDomainFormat = true,
+      bool validatePublicDomainFormat = false,
       int backlog = 0,
       bool v6Only = false,
       bool shared = false}) async {
@@ -246,9 +247,12 @@ class MultiDomainSecureServer {
     if (bytesAvailable > 0) {
       clientHello = rawSocket.read(1024) ?? _emptyBytes;
 
-      var hostname = parseSNIHostnameSafe(clientHello,
-          validatePublicDomainFormat: validatePublicDomainFormat);
+      var hostname = parseSNIHostnameSafe(clientHello);
       if (hostname != null) {
+        if (validatePublicDomainFormat && !isValidPublicDomainName(hostname)) {
+          hostname = null;
+        }
+
         return (
           hostname: hostname,
           clientHello: clientHello,
@@ -312,9 +316,14 @@ class MultiDomainSecureServer {
             ? Uint8List.fromList(clientHello + buffer)
             : buffer;
 
-        var hostname = parseSNIHostnameSafe(clientHello,
-            validatePublicDomainFormat: validatePublicDomainFormat);
+        var hostname = parseSNIHostnameSafe(clientHello);
+
         if (hostname != null) {
+          if (validatePublicDomainFormat &&
+              !isValidPublicDomainName(hostname)) {
+            hostname = null;
+          }
+
           return (
             hostname: hostname,
             clientHello: clientHello,
@@ -336,11 +345,9 @@ class MultiDomainSecureServer {
   }
 
   /// Safely calls [parseSNIHostname], catching errors and logging them.
-  static String? parseSNIHostnameSafe(Uint8List clientHelloBuffer,
-      {bool validatePublicDomainFormat = false}) {
+  static String? parseSNIHostnameSafe(Uint8List clientHelloBuffer) {
     try {
-      return parseSNIHostname(clientHelloBuffer,
-          validatePublicDomainFormat: validatePublicDomainFormat);
+      return parseSNIHostname(clientHelloBuffer);
     } catch (e, s) {
       _log.severe(
           "Error calling `parseSNIHostname`> clientHello: ${base64.encode(clientHelloBuffer)}",
@@ -358,8 +365,7 @@ class MultiDomainSecureServer {
   /// Returns the SNI hostname as a [String], or `null` if no hostname is found.
   ///
   /// [clientHelloBuffer]: The raw ClientHello message as a [Uint8List].
-  static String? parseSNIHostname(Uint8List clientHelloBuffer,
-      {bool validatePublicDomainFormat = false}) {
+  static String? parseSNIHostname(Uint8List clientHelloBuffer) {
     if (clientHelloBuffer.length < 53) return null;
 
     var offset = 0;
@@ -444,11 +450,7 @@ class MultiDomainSecureServer {
       // Server Name ASCII `String`:
       var serverName = String.fromCharCodes(serverNameBytes);
 
-      var validServerName = validatePublicDomainFormat
-          ? isValidPublicDomainName(serverName)
-          : isValidHostname(serverName);
-
-      if (!validServerName) {
+      if (!isValidHostname(serverName)) {
         ++offset;
         continue;
       }
