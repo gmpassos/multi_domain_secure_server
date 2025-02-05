@@ -30,8 +30,13 @@ class MultiDomainSecureServer {
   /// Resolves the [SecurityContext] for each connection and hostname.
   final SecurityContextResolver? securityContextResolver;
 
-  /// If true, only handshakes with a ClientHello message containing a hostname are accepted.
+  /// If true, only handshakes with a ClientHello message containing a
+  /// hostname are accepted. Default: false
   final bool requiresHandshakesWithHostname;
+
+  /// If true, validates whether the hostname in the TLS ClientHello message
+  /// follows a valid public domain format. Default: true
+  final bool validatePublicDomainFormat;
 
   late final StreamSubscription<RawSocket> _acceptSubscription;
 
@@ -40,7 +45,8 @@ class MultiDomainSecureServer {
       this._supportedProtocols,
       this._defaultSecureContext,
       this.securityContextResolver,
-      this.requiresHandshakesWithHostname) {
+      this.requiresHandshakesWithHostname,
+      this.validatePublicDomainFormat) {
     _acceptSubscription = _rawServerSocket.listen(_accept);
   }
 
@@ -81,6 +87,7 @@ class MultiDomainSecureServer {
       SecurityContext? defaultSecureContext,
       SecurityContextResolver? securityContextResolver,
       bool requiresHandshakesWithHostname = false,
+      bool validatePublicDomainFormat = true,
       int backlog = 0,
       bool v6Only = false,
       bool shared = false}) async {
@@ -91,7 +98,8 @@ class MultiDomainSecureServer {
         supportedProtocols,
         defaultSecureContext,
         securityContextResolver,
-        requiresHandshakesWithHostname);
+        requiresHandshakesWithHostname,
+        validatePublicDomainFormat);
   }
 
   final StreamController<RawSecureSocket> _onAcceptController =
@@ -105,7 +113,10 @@ class MultiDomainSecureServer {
   void _accept(RawSocket rawSocket) {
     rawSocket.writeEventsEnabled = false;
 
-    extractSNIHostname(rawSocket).then((sniHostname) {
+    extractSNIHostname(
+      rawSocket,
+      validatePublicDomainFormat: validatePublicDomainFormat,
+    ).then((sniHostname) {
       if (sniHostname.hostname == null && requiresHandshakesWithHostname) {
         sniHostname.subscription?.cancel();
         rawSocket.close();
@@ -221,11 +232,13 @@ class MultiDomainSecureServer {
   /// - [subscription]: A [StreamSubscription] to the socket's events, opened only if needed,
   ///   allowing the caller to manage or cancel socket operations.
   static Future<
-      ({
-        Uint8List clientHello,
-        String? hostname,
-        StreamSubscription<RawSocketEvent>? subscription
-      })> extractSNIHostname(RawSocket rawSocket) async {
+          ({
+            Uint8List clientHello,
+            String? hostname,
+            StreamSubscription<RawSocketEvent>? subscription
+          })>
+      extractSNIHostname(RawSocket rawSocket,
+          {bool validatePublicDomainFormat = false}) async {
     var clientHello = _emptyBytes;
 
     var bytesAvailable = rawSocket.available();
@@ -233,7 +246,8 @@ class MultiDomainSecureServer {
     if (bytesAvailable > 0) {
       clientHello = rawSocket.read(1024) ?? _emptyBytes;
 
-      var hostname = parseSNIHostnameSafe(clientHello);
+      var hostname = parseSNIHostnameSafe(clientHello,
+          validatePublicDomainFormat: validatePublicDomainFormat);
       if (hostname != null) {
         return (
           hostname: hostname,
@@ -298,7 +312,8 @@ class MultiDomainSecureServer {
             ? Uint8List.fromList(clientHello + buffer)
             : buffer;
 
-        var hostname = parseSNIHostnameSafe(clientHello);
+        var hostname = parseSNIHostnameSafe(clientHello,
+            validatePublicDomainFormat: validatePublicDomainFormat);
         if (hostname != null) {
           return (
             hostname: hostname,
@@ -321,9 +336,11 @@ class MultiDomainSecureServer {
   }
 
   /// Safely calls [parseSNIHostname], catching errors and logging them.
-  static String? parseSNIHostnameSafe(Uint8List clientHelloBuffer) {
+  static String? parseSNIHostnameSafe(Uint8List clientHelloBuffer,
+      {bool validatePublicDomainFormat = false}) {
     try {
-      return parseSNIHostname(clientHelloBuffer);
+      return parseSNIHostname(clientHelloBuffer,
+          validatePublicDomainFormat: validatePublicDomainFormat);
     } catch (e, s) {
       _log.severe(
           "Error calling `parseSNIHostname`> clientHello: ${base64.encode(clientHelloBuffer)}",
@@ -341,7 +358,8 @@ class MultiDomainSecureServer {
   /// Returns the SNI hostname as a [String], or `null` if no hostname is found.
   ///
   /// [clientHelloBuffer]: The raw ClientHello message as a [Uint8List].
-  static String? parseSNIHostname(Uint8List clientHelloBuffer) {
+  static String? parseSNIHostname(Uint8List clientHelloBuffer,
+      {bool validatePublicDomainFormat = false}) {
     if (clientHelloBuffer.length < 53) return null;
 
     var offset = 0;
@@ -426,7 +444,11 @@ class MultiDomainSecureServer {
       // Server Name ASCII `String`:
       var serverName = String.fromCharCodes(serverNameBytes);
 
-      if (!isValidHostname(serverName)) {
+      var validServerName = validatePublicDomainFormat
+          ? isValidPublicDomainName(serverName)
+          : isValidHostname(serverName);
+
+      if (!validServerName) {
         ++offset;
         continue;
       }
@@ -438,12 +460,82 @@ class MultiDomainSecureServer {
     return null;
   }
 
+  static final regexpNonPureNumericHostname = RegExp(r'[a-zA-Z]');
+
+  static final regexpHostName = RegExp(
+    r'''
+      ^  
+        [a-zA-Z0-9]
+        (?:
+          [a-zA-Z0-9-]{0,61}
+          [a-zA-Z0-9]
+        )?
+      
+        (?:
+          (?:
+            \.
+            [a-zA-Z0-9]
+            (?:
+              [a-zA-Z0-9-]{0,61}
+              [a-zA-Z0-9]
+            )?
+          )*
+        
+          \.
+          [a-zA-Z]{1,63}
+        )?
+      $
+    '''
+        .replaceAll(RegExp(r'\s+'), ''),
+    multiLine: false,
+  );
+
   static final regexpDomainName = RegExp(
-      r'^(?:(?!-)[A-Za-z0-9-]+(?<!-)|(?!-)[A-Za-z0-9-]{1,63}(?<!-)\.(?!-)([A-Za-z0-9-]{1,63})(\.[A-Za-z]{2,})?)$');
+    r'''
+      ^  
+        [a-zA-Z0-9]
+        (?:
+          [a-zA-Z0-9-]{0,61}
+          [a-zA-Z0-9]
+        )?
+      
+        (?:
+            \.
+            [a-zA-Z]{2,63}
+          |
+            (?:
+              (?:
+                \.
+                [a-zA-Z0-9]
+                (?:
+                  [a-zA-Z0-9-]{0,61}
+                  [a-zA-Z0-9]
+                )?
+              )*
+            )+
+            \.
+            [a-zA-Z]{2,63}
+        )
+      $
+    '''
+        .replaceAll(RegExp(r'\s+'), ''),
+    multiLine: false,
+  );
 
   static bool isValidHostname(String? hostname) {
-    if (hostname == null || hostname.isEmpty) return false;
-    return regexpDomainName.hasMatch(hostname);
+    if (hostname == null || hostname.isEmpty || hostname.length > 253) {
+      return false;
+    }
+    return regexpHostName.hasMatch(hostname) &&
+        regexpNonPureNumericHostname.hasMatch(hostname);
+  }
+
+  static bool isValidPublicDomainName(String? hostname) {
+    if (hostname == null || hostname.isEmpty || hostname.length > 253) {
+      return false;
+    }
+    return regexpDomainName.hasMatch(hostname) &&
+        regexpNonPureNumericHostname.hasMatch(hostname);
   }
 
   /// Attaches an [HttpServer] to this [MultiDomainSecureServer]
