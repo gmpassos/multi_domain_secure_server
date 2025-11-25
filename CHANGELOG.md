@@ -1,3 +1,13 @@
+## 1.0.14
+
+- `MultiDomainSecureServer`:
+  - `extractSNIHostname`:
+    - Optimize bytes buffer merge between loops. 
+    - Avoid infinity loop.
+
+- test: ^1.26.3
+- dependency_validator: ^5.0.3
+
 ## 1.0.13
 
 - `MultiDomainSecureServer`:

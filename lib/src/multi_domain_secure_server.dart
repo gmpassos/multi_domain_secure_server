@@ -11,6 +11,8 @@ import 'raw_socket_as_socket.dart';
 
 final _log = logging.Logger('MultiDomainSecureServer');
 
+final Uint8List _emptyBytes = Uint8List(0);
+
 /// A function that resolves a [SecurityContext] for a given [hostname].
 /// See [MultiDomainSecureServer.securityContextResolver]
 typedef SecurityContextResolver = SecurityContext? Function(String? hostname);
@@ -118,13 +120,14 @@ class MultiDomainSecureServer {
       rawSocket,
       validatePublicDomainFormat: validatePublicDomainFormat,
     ).then((sniHostname) {
-      if (sniHostname.hostname == null && requiresHandshakesWithHostname) {
+      final hostname = sniHostname.hostname;
+      if (hostname == null && requiresHandshakesWithHostname) {
         sniHostname.subscription?.cancel();
         rawSocket.close();
         return;
       }
 
-      var securityContext = resolveSecureContext(sniHostname.hostname);
+      var securityContext = resolveSecureContext(hostname);
       if (securityContext == null) {
         sniHostname.subscription?.cancel();
         rawSocket.close();
@@ -218,8 +221,6 @@ class MultiDomainSecureServer {
         streamController: streamController);
   }
 
-  static final Uint8List _emptyBytes = Uint8List(0);
-
   /// Extracts the SNI hostname from a TLS `ClientHello` message.
   ///
   /// Reads data from the provided [RawSocket] in chunks, extracting the SNI hostname
@@ -269,18 +270,23 @@ class MultiDomainSecureServer {
 
     rawSocket.readEventsEnabled = true;
     subscription = rawSocket.listen((event) {
+      final readCompleterF = readCompleter;
       switch (event) {
         case RawSocketEvent.read:
           {
-            readCompleter?.complete(true);
-            readCompleter = null;
+            if (readCompleterF != null && !readCompleterF.isCompleted) {
+              readCompleterF.complete(true);
+              readCompleter = null;
+            }
           }
         case RawSocketEvent.readClosed:
         case RawSocketEvent.closed:
           {
             closed = true;
-            readCompleter?.complete(true);
-            readCompleter = null;
+            if (readCompleterF != null && !readCompleterF.isCompleted) {
+              readCompleterF.complete(true);
+              readCompleter = null;
+            }
           }
         default:
           break;
@@ -289,11 +295,26 @@ class MultiDomainSecureServer {
 
     DateTime? initTime;
 
-    do {
-      bytesAvailable = rawSocket.available();
+    bool forceWaitReadEvent = false;
+    int noYeldCount = 0;
 
-      // No bytes yet, let's wait for it:
-      if (bytesAvailable == 0) {
+    do {
+      bool waitReadEvent;
+
+      // Force waiting or yield limit reached:
+      if (forceWaitReadEvent || noYeldCount >= 5) {
+        waitReadEvent = true;
+      } else {
+        // Only wait if no bytes are available yet:
+        bytesAvailable = rawSocket.available();
+        waitReadEvent = bytesAvailable == 0;
+      }
+
+      // Wait for read event:
+      if (waitReadEvent) {
+        forceWaitReadEvent = false;
+        noYeldCount = 0;
+
         var completer = readCompleter ??= Completer<bool>();
 
         await completer.future.timeout(
@@ -301,20 +322,26 @@ class MultiDomainSecureServer {
           onTimeout: () {
             if (!completer.isCompleted) {
               completer.complete(false);
+              readCompleter = null;
             }
             return false;
           },
         );
 
         readCompleter = null;
+
+        // A close event may have been received.
+        if (closed) {
+          break;
+        }
+      } else {
+        ++noYeldCount;
       }
 
       // Read data (ignore above timeout):
       var buffer = rawSocket.read(1024);
       if (buffer != null && buffer.isNotEmpty) {
-        clientHello = clientHello.isNotEmpty
-            ? Uint8List.fromList(clientHello + buffer)
-            : buffer;
+        clientHello = clientHello.merge(buffer);
 
         var hostname = parseSNIHostnameSafe(clientHello);
 
@@ -330,6 +357,9 @@ class MultiDomainSecureServer {
             subscription: subscription
           );
         }
+      } else {
+        // No data read — force waiting for a read event:
+        forceWaitReadEvent = true;
       }
 
       initTime ??= DateTime.now();
@@ -774,4 +804,20 @@ class _HttpServerSecureMultiDomain implements HttpServer {
   @override
   Stream<HttpRequest> where(bool Function(HttpRequest event) test) =>
       _server.where(test);
+}
+
+extension on Uint8List {
+  Uint8List merge(Uint8List other) {
+    final len1 = length;
+    final len2 = other.length;
+
+    if (len1 == 0) return len2 == 0 ? _emptyBytes : other;
+    if (len2 == 0) return this;
+
+    final result = Uint8List(len1 + len2);
+    result.setRange(0, len1, this);
+    result.setRange(len1, len1 + len2, other);
+
+    return result;
+  }
 }
