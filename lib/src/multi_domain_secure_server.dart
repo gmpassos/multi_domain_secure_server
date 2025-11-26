@@ -300,14 +300,17 @@ class MultiDomainSecureServer {
 
     do {
       bool waitReadEvent;
+      Duration waitReadTimeout;
 
       // Force waiting or yield limit reached:
       if (forceWaitReadEvent || noYeldCount >= 16) {
         waitReadEvent = true;
+        waitReadTimeout = const Duration(milliseconds: 100);
       } else {
         // Only wait if no bytes are available yet:
         bytesAvailable = rawSocket.available();
         waitReadEvent = bytesAvailable == 0;
+        waitReadTimeout = const Duration(seconds: 5);
       }
 
       // Wait for read event:
@@ -318,7 +321,7 @@ class MultiDomainSecureServer {
         var completer = readCompleter ??= Completer<bool>();
 
         await completer.future.timeout(
-          Duration(seconds: 5),
+          waitReadTimeout,
           onTimeout: () {
             if (!completer.isCompleted) {
               completer.complete(false);

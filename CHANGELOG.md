@@ -1,3 +1,9 @@
+## 1.0.16
+
+- `MultiDomainSecureServer`:
+    - `extractSNIHostname`:
+        - use different wait read timeout, depending on wait context (100 ms or 5 sec).
+
 ## 1.0.15
 
 - `MultiDomainSecureServer`:
