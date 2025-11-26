@@ -302,7 +302,7 @@ class MultiDomainSecureServer {
       bool waitReadEvent;
 
       // Force waiting or yield limit reached:
-      if (forceWaitReadEvent || noYeldCount >= 5) {
+      if (forceWaitReadEvent || noYeldCount >= 16) {
         waitReadEvent = true;
       } else {
         // Only wait if no bytes are available yet:

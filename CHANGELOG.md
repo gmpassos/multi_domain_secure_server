@@ -1,3 +1,12 @@
+## 1.0.15
+
+- `MultiDomainSecureServer`:
+    - `extractSNIHostname`:
+        - change `noYeldCount` limit from `5` to `16`,
+          since the limit is just to avoid an infinity loop and should not happen in normal cases. 
+
+- test: ^1.28.0
+
 ## 1.0.14
 
 - `MultiDomainSecureServer`:
