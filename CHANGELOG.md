@@ -1,3 +1,8 @@
+## 1.0.17
+
+- `MultiDomainSecureServer`:
+    - `_accept`, `extractSNIHostname`: improve error handling and logging.
+
 ## 1.0.16
 
 - `MultiDomainSecureServer`:

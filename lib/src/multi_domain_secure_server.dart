@@ -151,6 +151,13 @@ class MultiDomainSecureServer {
             () => "Erro establishing `RawSecureSocket` on accepted `RawSocket`",
             e);
       });
+    }, onError: (e, s) {
+      _log.severe(
+          "Error extracting SNI hostname from TLS ClientHello — closing socket",
+          e,
+          s);
+
+      rawSocket.close();
     });
   }
 
@@ -342,7 +349,22 @@ class MultiDomainSecureServer {
       }
 
       // Read data (ignore above timeout):
-      var buffer = rawSocket.read(1024);
+      Uint8List? buffer;
+      try {
+        buffer = rawSocket.read(1024);
+      } on SocketException catch (e) {
+        _log.severe(
+            "Socket error during TLS ClientHello read — failed to extract SNI hostname.",
+            e);
+        break;
+      } catch (e, s) {
+        _log.severe(
+            "Unexpected error while reading from socket — failed to extract SNI hostname.",
+            e,
+            s);
+        break;
+      }
+
       if (buffer != null && buffer.isNotEmpty) {
         clientHello = clientHello.merge(buffer);
 
